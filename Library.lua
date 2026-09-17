@@ -686,4 +686,533 @@ local function hasFileApi()
 end
 local function ensureConfigFolder()
     if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return end
-    local parts
+    local parts = string.split(Library.ConfigFolder, "/")
+    local path = ""
+    for _, part in ipairs(parts) do
+        if part ~= "" then
+            path = (path == "") and part or (path .. "/" .. part)
+            if not isfolder(path) then pcall(makefolder, path) end
+        end
+    end
+end
+local function configPath(name)
+    name = tostring(name or "default"):gsub("[^%w%-_ ]", "")
+    if name == "" then name = "default" end
+    return Library.ConfigFolder .. "/" .. name .. ".json"
+end
+
+local autoSaveThread = nil
+function Library:QueueAutoSave()
+    if Library._autoSaveDisabled then return end
+    if not hasFileApi() then return end
+    local cfgName = Library._currentConfigName or "autoload"
+    if autoSaveThread then
+        pcall(task.cancel, autoSaveThread)
+        autoSaveThread = nil
+    end
+    autoSaveThread = task.delay(0.6, function()
+        autoSaveThread = nil
+        pcall(function() Library:SaveConfig(cfgName) end)
+    end)
+end
+
+function Library:SaveConfig(name)
+    if not hasFileApi() then return false end
+    ensureConfigFolder()
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(Library:GetConfig())
+    end)
+    if not ok then return false end
+    local wrote = pcall(writefile, configPath(name), encoded)
+    return wrote
+end
+
+function Library:LoadConfig(name)
+    if not hasFileApi() then return false end
+    local path = configPath(name)
+    if type(isfile) == "function" and not isfile(path) then return false end
+    local ok, raw = pcall(readfile, path)
+    if not ok or not raw then return false end
+    local decoded, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not decoded then return false end
+    return Library:LoadConfigData(data)
+end
+
+function Library:ListConfigs()
+    local out = {}
+    if type(listfiles) ~= "function" then return out end
+    ensureConfigFolder()
+    local ok, files = pcall(listfiles, Library.ConfigFolder)
+    if not ok or type(files) ~= "table" then return out end
+    for _, file in ipairs(files) do
+        local name = string.match(tostring(file), "([^/\\]+)%.json$")
+        if name then table.insert(out, name) end
+    end
+    return out
+end
+
+function Library:DeleteConfig(name)
+    if type(delfile) ~= "function" then return false end
+    local path = configPath(name)
+    if type(isfile) == "function" and not isfile(path) then return false end
+    return (pcall(delfile, path))
+end
+
+function Library:Notify(opts)
+    for index = #Library._windowObjects, 1, -1 do
+        local window = Library._windowObjects[index]
+        if window and window.ScreenGui and window.ScreenGui.Parent then
+            return window:Notify(opts)
+        end
+    end
+    return nil
+end
+function Library:Notification(opts) return self:Notify(opts) end
+function Library:IsAdmin() return false end
+function Library:AdminDisconnect() return false, "not supported" end
+function Library:JoinPlayer() return false, "not supported" end
+
+function Library:DestroyAll()
+    local objects = table.clone(Library._windowObjects or {})
+    for _, window in ipairs(objects) do
+        if window and type(window.Destroy) == "function" then
+            pcall(function() window:Destroy() end)
+        end
+    end
+    local windows = table.clone(Library._windows)
+    for _, screenGui in ipairs(windows) do
+        if screenGui and screenGui.Parent then pcall(function() screenGui:Destroy() end) end
+    end
+    table.clear(Library._windows)
+    table.clear(Library._windowObjects or {})
+    table.clear(Library.Flags)
+    stopTagSystem()
+end
+
+-- Returns an accent color setter used by the Settings tab
+function Library:SetAccent(color)
+    if typeof(color) ~= "Color3" then return false end
+    C.Accent = color
+    C.AccentDim = color:Lerp(Color3.fromRGB(0, 0, 0), 0.75)
+    local h, s, v = color:ToHSV()
+    C.KnobAccent = Color3.fromHSV(h, math.min(s * 0.8, 0.6), math.max(v * 0.15, 0.08))
+    C.AccentText = (v > 0.7) and Color3.fromRGB(10, 5, 20) or Color3.fromRGB(255, 255, 255)
+    rebuildReverse()
+    for _, gui in ipairs(Library._windows) do
+        if gui and gui.Parent then
+            for _, inst in ipairs(gui:GetDescendants()) do
+                if inst:IsA("UIGradient") then
+                    refreshEdgeGradient(inst)
+                    refreshVerticalFade(inst)
+                end
+                local goal
+                for _, prop in ipairs(THEME_PROPS) do
+                    local key = inst:GetAttribute("Theme_" .. prop)
+                    if key and C[key] then goal = goal or {}; goal[prop] = C[key] end
+                end
+                if goal then tween(inst, goal) end
+            end
+        end
+    end
+    return true
+end
+
+function Library:GetAccent() return C.Accent end
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- CREATE WINDOW
+-- ════════════════════════════════════════════════════════════════════════════
+function Library:CreateWindow(opts)
+    opts = opts or {}
+
+    local logoAsset      = normalizeAssetId(opts.Logo or DEFAULT_LOGO)
+    local logoZoom       = math.clamp(tonumber(opts.LogoZoom) or 1, 1, 6)
+    local windowSize     = opts.Size or UDim2.fromOffset(700, 490)
+    local windowPosition = opts.Position or UDim2.fromScale(0.5, 0.5)
+    local guiName        = opts.GuiName or "N3MoggHub"
+
+    local function detectMobile()
+        local platform = nil
+        pcall(function() platform = UserInputService:GetPlatform() end)
+        if platform == Enum.Platform.IOS or platform == Enum.Platform.Android then return true end
+        return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+    end
+    local isMobile = (opts.Mobile == true) or (opts.Mobile ~= false and detectMobile())
+
+    local HOTBAR_HEIGHT  = 36
+    local HOTBAR_GAP     = 8
+
+    local targetParent
+    if typeof(opts.Parent) == "Instance" then
+        targetParent = opts.Parent
+    else
+        pcall(function() targetParent = (gethui and gethui()) or game:GetService("CoreGui") end)
+        if not targetParent then targetParent = Players.LocalPlayer:WaitForChild("PlayerGui") end
+    end
+
+    local function removeExistingGui(parent)
+        if opts.ReplaceExisting == false or not parent then return end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("ScreenGui") and child.Name == guiName then child:Destroy() end
+        end
+    end
+    removeExistingGui(targetParent)
+
+    local screenGui = make("ScreenGui", {
+        Name = guiName, ResetOnSpawn = false, IgnoreGuiInset = true,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = opts.DisplayOrder or 10,
+    })
+    local parented = pcall(function() screenGui.Parent = targetParent end)
+    if not parented then
+        targetParent = Players.LocalPlayer:WaitForChild("PlayerGui")
+        removeExistingGui(targetParent)
+        screenGui.Parent = targetParent
+    end
+    table.insert(Library._windows, screenGui)
+
+    local containerW = windowSize.X.Offset
+    local containerH = windowSize.Y.Offset + HOTBAR_GAP + HOTBAR_HEIGHT
+
+    local container = make("Frame", {
+        Name = "N3MoggContainer",
+        Size = UDim2.fromOffset(containerW, containerH),
+        Position = windowPosition,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1,
+        ZIndex = 2,
+        Parent = screenGui,
+    })
+    local containerScale = make("UIScale", { Scale = 1, Parent = container })
+
+    local loadingEnabled  = opts.LoadingAnimation ~= false
+    local loadingDuration = math.clamp(tonumber(opts.LoadingDuration) or 1.2, 0.4, 8)
+    local loadingText     = tostring(opts.LoadingText or opts.Name or "N3 mogg hub")
+    local loadingSub      = tostring(opts.LoadingSubtitle or "HUB")
+    local loadingFooter   = tostring(opts.LoadingFooter or "N3 mogg hub")
+
+    local loadingComplete = not loadingEnabled
+    local loadingLayer
+
+    if loadingEnabled then
+        loadingLayer = make("CanvasGroup", {
+            Name = "StartupLoader", Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0.35,
+            GroupTransparency = 0, ZIndex = 500, Parent = screenGui,
+        })
+        local mainWrap = make("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(820, 140),
+            Position = UDim2.new(0.5, 0, 0.5, -20), BackgroundTransparency = 1, ZIndex = 510, Parent = loadingLayer,
+        })
+        make("TextLabel", {
+            Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = loadingText,
+            Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = C.White,
+            TextStrokeColor3 = Color3.fromRGB(0, 0, 0), TextStrokeTransparency = 0.3,
+            ZIndex = 510, Parent = mainWrap,
+        })
+        make("TextLabel", {
+            Size = UDim2.fromOffset(400, 22), Position = UDim2.new(0.5, 0, 0.5, 82), AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1, Text = loadingSub, Font = Enum.Font.GothamBold, TextSize = 16,
+            TextColor3 = C.Accent, TextStrokeColor3 = Color3.fromRGB(0, 0, 0), TextStrokeTransparency = 0.5,
+            ZIndex = 510, Parent = loadingLayer,
+        })
+        task.spawn(function()
+            task.wait(loadingDuration)
+            if loadingLayer.Parent then
+                TweenService:Create(loadingLayer, TweenInfo.new(0.32, Enum.EasingStyle.Quart), { GroupTransparency = 1 }):Play()
+                task.wait(0.35)
+                if loadingLayer.Parent then loadingLayer:Destroy() end
+                loadingComplete = true
+            end
+        end)
+    end
+
+    local main = make("Frame", {
+        Name = "Main", Size = windowSize,
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundColor3 = C.WindowBg, ClipsDescendants = true,
+        Visible = not loadingEnabled, ZIndex = 2, Parent = container,
+    })
+    corner(main, 12); stroke(main, C.Border)
+
+    local mainGlowStroke = make("UIStroke", {
+        Color = C.Accent, Thickness = 1.6,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Transparency = 0, Parent = main,
+    })
+    local mainGlowGradient = make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, C.Accent),
+            ColorSequenceKeypoint.new(0.42, C.Accent),
+            ColorSequenceKeypoint.new(0.50, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(0.58, C.Accent),
+            ColorSequenceKeypoint.new(1.00, C.Accent),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.00, 1.0),
+            NumberSequenceKeypoint.new(0.36, 1.0),
+            NumberSequenceKeypoint.new(0.50, 0.0),
+            NumberSequenceKeypoint.new(0.64, 1.0),
+            NumberSequenceKeypoint.new(1.00, 1.0),
+        }),
+        Parent = mainGlowStroke,
+    })
+    mainGlowGradient:SetAttribute("ThemeGradient_Edge", "Accent")
+    local glowT = 0
+    RunService.RenderStepped:Connect(function(dt)
+        if not main or not main.Parent then return end
+        glowT = (glowT + dt * 0.35) % 1
+        mainGlowGradient.Offset = Vector2.new(glowT * 2 - 1, 0)
+    end)
+
+    local hotbar = make("Frame", {
+        Name = "TabHotbar",
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0, windowSize.Y.Offset + HOTBAR_GAP),
+        Size = UDim2.fromOffset(0, HOTBAR_HEIGHT),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundColor3 = C.HotbarBg, ClipsDescendants = false,
+        Visible = not loadingEnabled, ZIndex = 3, Parent = container,
+    })
+    corner(hotbar, 11)
+    local hotbarStroke = make("UIStroke", {
+        Color = Color3.fromRGB(255, 255, 255), Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = hotbar,
+    })
+    hotbarStroke:SetAttribute("Theme_Color", nil)
+    edgeAccentGradient(hotbarStroke, "Accent", "HotbarBorder", 0.15)
+    pad(hotbar, 5, 5, 10, 10)
+
+    local hotbarInner = make("Frame", {
+        Name = "HotbarInner", Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1, ZIndex = 4, Parent = hotbar,
+    })
+    make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 4), Parent = hotbarInner,
+    })
+
+    local minimized = false
+    local noDrag = {}
+    table.insert(noDrag, hotbar)
+
+    local controls = make("Frame", {
+        Name = "CornerControls", AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -6, 0, 8), Size = UDim2.fromOffset(36, 16),
+        BackgroundTransparency = 1, ZIndex = 10, Parent = main,
+    })
+    local closeBtn = make("TextButton", {
+        Text = "", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0),
+        Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Color3.fromRGB(190, 60, 60),
+        ZIndex = 12, Parent = controls,
+    })
+    circle(closeBtn)
+    local minimizeBtn = make("TextButton", {
+        Text = "", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(0, 12, 0, 0),
+        Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Color3.fromRGB(255, 195, 0),
+        ZIndex = 12, Parent = controls,
+    })
+    circle(minimizeBtn)
+    table.insert(noDrag, closeBtn); table.insert(noDrag, minimizeBtn)
+
+    local sidebar = make("Frame", { Size = UDim2.new(0, 190, 1, 0), BackgroundTransparency = 1, Parent = main })
+    local brand = make("Frame", { Name = "Brand", Position = UDim2.fromOffset(12, 12), Size = UDim2.new(1, -24, 0, 64), BackgroundColor3 = C.White, Parent = sidebar })
+    corner(brand, 10); stroke(brand, C.Border)
+    brand:SetAttribute("Theme_BackgroundColor3", nil)
+    local brandGrad = make("UIGradient", { Rotation = 90, Parent = brand })
+    brandGrad:SetAttribute("ThemeGradient_Top", "CardBg")
+    brandGrad:SetAttribute("ThemeGradient_Bottom", "Accent")
+    brandGrad:SetAttribute("ThemeGradient_Strength", 0.5)
+    refreshVerticalFade(brandGrad)
+    local logoHolder = make("Frame", { Position = UDim2.fromOffset(9, 9), Size = UDim2.fromOffset(46, 46), BackgroundTransparency = 1, ClipsDescendants = true, Parent = brand })
+    make("ImageLabel", { Image = logoAsset, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(logoZoom, logoZoom), ScaleType = Enum.ScaleType.Fit, Parent = logoHolder })
+    make("TextLabel", { Text = opts.Name or "N3 mogg hub", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(64, 16), Size = UDim2.new(1, -72, 0, 17), Parent = brand })
+    make("TextLabel", { Text = opts.BrandSubtitle or ("v" .. Library.Version), Font = Enum.Font.GothamMedium, TextSize = 9, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(64, 35), Size = UDim2.new(1, -72, 0, 13), Parent = brand })
+
+    local lp = Players.LocalPlayer
+    local pcard = make("Frame", { Name = "PlayerCard", Position = UDim2.fromOffset(12, 88), Size = UDim2.new(1, -24, 0, 52), BackgroundColor3 = C.CardBg, Parent = sidebar })
+    corner(pcard, 10); stroke(pcard, C.Border)
+    local avH = make("Frame", { Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(36, 36), BackgroundColor3 = C.Element, Parent = pcard })
+    corner(avH, 8)
+    make("ImageLabel", { Image = "rbxthumb://type=AvatarHeadShot&id=" .. lp.UserId .. "&w=150&h=150", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, Parent = avH })
+    local avRing = stroke(avH, C.Accent); avRing.Transparency = 0.4
+    make("TextLabel", { Text = lp.DisplayName, Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(52, 10), Size = UDim2.new(1, -60, 0, 15), Parent = pcard })
+    make("TextLabel", { Text = "@" .. lp.Name, Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(52, 28), Size = UDim2.new(1, -60, 0, 13), Parent = pcard })
+
+    local watermarkHolder = make("Frame", { Name = "Watermark", BackgroundTransparency = 1, ClipsDescendants = true, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 24), Size = UDim2.fromOffset(156, 156), ZIndex = 0, Parent = sidebar })
+    make("ImageLabel", { Name = "WatermarkImage", Image = logoAsset, BackgroundTransparency = 1, ImageTransparency = 0.85, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(logoZoom, logoZoom), ScaleType = Enum.ScaleType.Fit, ZIndex = 3, Parent = watermarkHolder })
+
+    local statusDot = make("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 16, 1, -19), Size = UDim2.fromOffset(6, 6), BackgroundColor3 = NOTIFICATION_STYLES.success.Color, Parent = sidebar })
+    circle(statusDot)
+    make("TextLabel", { Text = opts.StatusText or "N3 mogg hub ready", Font = Enum.Font.GothamMedium, TextSize = 10, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.new(0, 28, 1, -27), Size = UDim2.new(1, -40, 0, 16), Parent = sidebar })
+
+    local divLine = make("Frame", { Position = UDim2.fromOffset(190, 0), Size = UDim2.new(0, 1, 1, 0), BackgroundColor3 = C.Accent, Parent = main })
+    make("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.5), NumberSequenceKeypoint.new(1, 1) }), Parent = divLine })
+    local content = make("Frame", { Position = UDim2.fromOffset(191, 0), Size = UDim2.new(1, -191, 1, 0), BackgroundTransparency = 1, Parent = main })
+
+    local dragConn = makeDraggable(container, noDrag)
+
+    local notificationHolder = make("Frame", {
+        Name = "Notifications", AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -16, 0, 16), Size = UDim2.new(0, 300, 1, -32),
+        BackgroundTransparency = 1, ZIndex = 200, Parent = screenGui,
+    })
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, HorizontalAlignment = Enum.HorizontalAlignment.Right, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6), Parent = notificationHolder })
+
+    local windowRef = setmetatable({
+        ScreenGui = screenGui, Main = main, Container = container,
+        _hotbar = hotbar, _hotbarInner = hotbarInner, _content = content,
+        _notificationHolder = notificationHolder, _notificationOrder = 0,
+        _connections = {}, _noDrag = noDrag, _tabs = {}, _activeTab = nil,
+        _containerScale = containerScale, _uiVisible = true,
+        _destroyed = false,
+    }, Window)
+
+    if dragConn then table.insert(windowRef._connections, dragConn) end
+
+    table.insert(Library._windowObjects, windowRef)
+
+    closeBtn.MouseButton1Click:Connect(function() windowRef:Destroy() end)
+    minimizeBtn.MouseButton1Click:Connect(function()
+        minimized = true
+        main.Visible = false
+        hotbar.Visible = false
+    end)
+
+    task.defer(function()
+        while not loadingComplete do RunService.Heartbeat:Wait() end
+        if screenGui.Parent then
+            main.Visible = true
+            hotbar.Visible = true
+        end
+    end)
+
+    return windowRef
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- WINDOW METHODS
+-- ════════════════════════════════════════════════════════════════════════════
+function Window:SetState(key, val) return Library:SetState(key, val) end
+function Window:GetState(key, default) return Library:GetState(key, default) end
+function Window:BindState(key, fn) return Library:BindState(key, fn) end
+function Window:Get(flag, default) return Library:Get(flag, default) end
+function Window:Set(flag, value) return Library:Set(flag, value) end
+function Window:SetVisible(v) self.ScreenGui.Enabled = v == true end
+function Window:Toggle() self.ScreenGui.Enabled = not self.ScreenGui.Enabled; return self.ScreenGui.Enabled end
+function Window:Destroy()
+    self._destroyed = true
+    for _, c in ipairs(self._connections or {}) do pcall(function() c:Disconnect() end) end
+    table.clear(self._connections or {})
+    local i = table.find(Library._windows, self.ScreenGui); if i then table.remove(Library._windows, i) end
+    local j = table.find(Library._windowObjects, self); if j then table.remove(Library._windowObjects, j) end
+    if self.ScreenGui then self.ScreenGui:Destroy() end
+end
+
+function Window:Notify(opts)
+    if type(opts) == "string" then opts = { Content = opts } end
+    opts = opts or {}
+    local holder = self._notificationHolder
+    if not holder or not holder.Parent then return nil end
+    local style = getNotificationStyle(opts.Type)
+    local dur = tonumber(opts.Duration); if dur == nil then dur = 4 end; dur = math.max(dur, 0)
+    self._notificationOrder = self._notificationOrder + 1
+    local title = tostring(opts.Title or style.Name)
+    local body = tostring(opts.Content or opts.Description or opts.Message or "Notification")
+    local slot = make("Frame", { Name = "NotificationSlot", Size = UDim2.new(1, 0, 0, 62), BackgroundTransparency = 1, LayoutOrder = self._notificationOrder, ZIndex = 200, Parent = holder })
+    local card = make("CanvasGroup", { Name = style.Name .. "Notification", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 12, 0, 0), Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.CardBg, GroupTransparency = 1, ClipsDescendants = true, ZIndex = 201, Parent = slot })
+    corner(card, 6); stroke(card, C.Border)
+    local accentBar = make("Frame", { Position = UDim2.fromOffset(0, 10), Size = UDim2.fromOffset(3, 42), BackgroundColor3 = style.Color, ZIndex = 202, Parent = card })
+    corner(accentBar, 2)
+    make("TextLabel", { Text = title, Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = style.Color, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -46, 0, 16), ZIndex = 202, Parent = card })
+    make("TextLabel", { Text = body, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextGray, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 27), Size = UDim2.new(1, -26, 0, 26), ZIndex = 202, Parent = card })
+    local xb = make("TextButton", { Text = "×", Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = C.TextDim, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -7, 0, 5), Size = UDim2.fromOffset(20, 20), BackgroundTransparency = 1, ZIndex = 204, Parent = card })
+    local closed = false; local handle = {}
+    local function close(reason)
+        if closed then return end; closed = true
+        TweenService:Create(card, NOTIFICATION_TWEEN, { Position = UDim2.new(1, 12, 0, 0), GroupTransparency = 1 }):Play()
+        task.delay(0.2, function() if slot and slot.Parent then slot:Destroy() end end)
+        fire(opts.Callback or opts.OnClose, reason or "closed")
+    end
+    function handle:Close() close("manual") end
+    function handle:IsOpen() return not closed end
+    xb.MouseButton1Click:Connect(function() close("manual") end)
+    TweenService:Create(card, NOTIFICATION_TWEEN, { Position = UDim2.new(1, 0, 0, 0), GroupTransparency = 0 }):Play()
+    if dur > 0 then task.delay(dur, function() close("timeout") end) end
+    return handle
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- TAB SYSTEM
+-- ════════════════════════════════════════════════════════════════════════════
+function Window:_selectTab(tab)
+    if self._activeTab == tab then return end
+    local prev = self._activeTab; self._activeTab = tab
+    if prev then
+        prev._page.Visible = false
+        tween(prev._hBtn, { BackgroundColor3 = C.HotbarBg })
+        tween(prev._hLabel, { TextColor3 = C.TextGray })
+        if prev._hIconElement then
+            if prev._hIconElement:IsA("ImageLabel") then tween(prev._hIconElement, { ImageColor3 = C.TextGray })
+            elseif prev._hIconElement:IsA("TextLabel") then tween(prev._hIconElement, { TextColor3 = C.TextGray }) end
+        end
+    end
+    tab._page.Visible = true
+    tween(tab._hBtn, { BackgroundColor3 = C.HotbarActive })
+    tween(tab._hLabel, { TextColor3 = C.White })
+    if tab._hIconElement then
+        if tab._hIconElement:IsA("ImageLabel") then tween(tab._hIconElement, { ImageColor3 = C.White })
+        elseif tab._hIconElement:IsA("TextLabel") then tween(tab._hIconElement, { TextColor3 = C.White }) end
+    end
+end
+
+function Window:AddTab(opts)
+    if type(opts) == "string" then opts = { Name = opts } end
+    opts = opts or {}
+    local name = opts.Name or "Tab"
+    local iconInput = opts.Icon
+    local win = self
+
+    local iconType, iconValue = resolveIcon(iconInput)
+    if not iconType then
+        local autoKey = string.lower(name)
+        if ICONS[autoKey] then iconType = "image"; iconValue = ICONS[autoKey]
+        else iconType = "text"; iconValue = string.upper(string.sub(name, 1, 1)) end
+    end
+
+    local hBtn = make("TextButton", {
+        Text = "", AutomaticSize = Enum.AutomaticSize.X,
+        Size = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = C.HotbarBg,
+        ZIndex = 5, Parent = self._hotbarInner,
+    })
+    hBtn.LayoutOrder = #self._hotbarInner:GetChildren()
+    corner(hBtn, 7); pad(hBtn, 0, 0, 12, 12)
+    table.insert(win._noDrag, hBtn)
+
+    local hRow = make("Frame", { BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 1, 0), ZIndex = 5, Parent = hBtn })
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6), Parent = hRow })
+
+    local iconBadge = make("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundTransparency = 1, LayoutOrder = 1, ZIndex = 6, Parent = hRow })
+    local hIconElement = createIconElement(iconBadge, iconType, iconValue, 18, 7)
+
+    local hLabel = make("TextLabel", {
+        Text = name, Font = Enum.Font.GothamMedium, TextSize = 12,
+        TextColor3 = C.TextGray, BackgroundTransparency = 1,
+        AutomaticSize = Enum.AutomaticSize.X,
+        Size = UDim2.new(0, 0, 1, 0), LayoutOrder = 2, ZIndex = 6, Parent = hRow,
+    })
+
+    local page = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, Parent = self._content })
+    local header = make("Frame", { Size = UDim2.new(1, 0, 0, 88), BackgroundTransparency = 1, Parent = page })
+
+    local headerBadge = make("Frame", { Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(14, 14), BackgroundTransparency = 1, Parent = header })
+    local headerIconElement = createIconElement(headerBadge, iconType, iconValue, 26, 3)
+    if headerIconElement:IsA("ImageLabel") then headerIconElement.ImageColor3 = C.White
+    elseif headerIconElement:IsA("TextLabel") then headerIconElement.TextColor3 = C.White end
+
+    make("TextLabel", { Text = name, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(54, 17), Size = UDim2.new(1, -70, 0, 14), Parent = header })
+    make("TextLabel", { Text = opts.Subtitle or "", Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment
