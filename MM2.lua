@@ -63,35 +63,110 @@ local function GetLevel()
     if l then return tonumber(l.Value) or 0 end
     return 0
 end
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- ROLE TRACKER (мгновенное определение ролей)
+-- ════════════════════════════════════════════════════════════════════════════
+-- Кэш ролей: [Player] = "Murderer" / "Sheriff" / "Innocent" / "Dead"
+local roleMemory = {}
+
+local function isToolRole(t)
+    if not t or not t:IsA("Tool") then return nil end
+    local n = t.Name:lower()
+    if n:find("knife") then return "Murderer" end
+    if n:find("gun") or n:find("revolver") or n:find("pistol") then return "Sheriff" end
+    return nil
+end
+
+-- Главный GetRole:
+-- 1) Атрибуты Role (мгновенно, если игра выставляет)
+-- 2) Если умер — Dead
+-- 3) Инвентарь (нож/пистолет)
+-- 4) Память (если когда-то видели роль — помним)
 local function GetRole(plr)
-    plr = plr or LocalPlayer
+    if plr == nil then plr = LocalPlayer end
+    if plr == LocalPlayer then
+        -- Для себя тоже проверяем атрибут
+        local myAttr = plr:GetAttribute("Role")
+        if myAttr == "Murderer" then return "Murderer" end
+        if myAttr == "Sheriff" then return "Sheriff" end
+        if myAttr == "Hero" then return "Hero" end
+    end
+
+    -- 1) Атрибут Role на игроке
+    local roleAttr = plr:GetAttribute("Role")
+    if roleAttr == "Murderer" then roleMemory[plr] = "Murderer"; return "Murderer" end
+    if roleAttr == "Sheriff" then roleMemory[plr] = "Sheriff"; return "Sheriff" end
+    if roleAttr == "Hero" then roleMemory[plr] = "Hero"; return "Hero" end
+    if roleAttr == "Innocent" then roleMemory[plr] = "Innocent"; return "Innocent" end
+
     local char = plr.Character
-    if not char then return "Unknown" end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.Health <= 0 then return "Dead" end
-    for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") then
-            local n = t.Name:lower()
-            if n:find("knife") then return "Murderer" end
-            if n:find("gun") then return "Sheriff" end
+    if char then
+        -- 2) Атрибут Role на персонаже
+        local charAttr = char:GetAttribute("Role")
+        if charAttr == "Murderer" then roleMemory[plr] = "Murderer"; return "Murderer" end
+        if charAttr == "Sheriff" then roleMemory[plr] = "Sheriff"; return "Sheriff" end
+        if charAttr == "Hero" then roleMemory[plr] = "Hero"; return "Hero" end
+        if charAttr == "Innocent" then roleMemory[plr] = "Innocent"; return "Innocent" end
+
+        -- 3) Проверка жив ли
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health <= 0 then
+            roleMemory[plr] = "Dead"
+            return "Dead"
+        end
+
+        -- 4) Инвентарь — экипировано
+        for _, t in ipairs(char:GetChildren()) do
+            local r = isToolRole(t)
+            if r then roleMemory[plr] = r; return r end
         end
     end
+
+    -- 5) Инвентарь — Backpack
     local bp = plr:FindFirstChild("Backpack")
     if bp then
         for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and t.Name:lower():find("knife") then return "Murderer?" end
-            if t:IsA("Tool") and t.Name:lower():find("gun") then return "Sheriff?" end
+            local r = isToolRole(t)
+            if r then roleMemory[plr] = r; return r end
         end
     end
-    return "Innocent"
+
+    -- 6) Если когда-то видели роль — помним её (роль не меняется в раунде)
+    if roleMemory[plr] then return roleMemory[plr] end
+
+    -- 7) Пока ничего не знаем — Unknown (не Innocent, чтобы не путать)
+    return "Unknown"
 end
+
+-- Сброс памяти ролей между раундами
+-- Отслеживаем момент, когда у всех игроков пропадают ножи/пистолеты → новый раунд
+local function clearRoleMemory()
+    roleMemory = {}
+end
+
+-- Следим за спавном персонажа — новая роль
+for _, p in ipairs(Players:GetPlayers()) do
+    p.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        -- При респавне — сбрасываем память для этого игрока
+        roleMemory[p] = nil
+    end)
+end
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        roleMemory[p] = nil
+    end)
+end)
+
 local function RoleColor(role)
     if role == "Murderer" then return Color3.fromRGB(255, 60, 60)
     elseif role == "Sheriff" then return Color3.fromRGB(60, 130, 255)
-    elseif role:find("Sheriff") then return Color3.fromRGB(80, 140, 255)
-    elseif role:find("Murderer") then return Color3.fromRGB(255, 80, 80)
+    elseif role == "Hero" then return Color3.fromRGB(60, 255, 255)
+    elseif role == "Innocent" then return Color3.fromRGB(80, 220, 120)
     elseif role == "Dead" then return Color3.fromRGB(120, 120, 120)
-    else return Color3.fromRGB(80, 220, 120) end
+    else return Color3.fromRGB(180, 180, 180) end  -- Unknown — серый
 end
 local function FormatMoney(v) return tostring(math.floor(tonumber(v) or 0)) end
 
@@ -335,13 +410,12 @@ VisualSub:AddSlider({ Name = "Text Size", Min = 10, Max = 20, Default = 14, Flag
 VisualSub:AddSlider({ Name = "Max Distance", Min = 0, Max = 5000, Default = 1000, Suffix = "m", Flag = "esp_maxdist",
     Callback = function(v) esp.maxDistance = v end })
 
--- ── getBox2D: быстрый расчёт бокса ──
+-- Быстрый расчёт бокса (2 точки: голова → низ)
 local function getBox2D(char)
     if not char then return nil end
     local head = char:FindFirstChild("Head")
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
-    -- Точки для верх/низ: голова и ноги (или HRP)
     local topPos = head and head.Position or (hrp.Position + Vector3.new(0, 1.5, 0))
     local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
 
@@ -353,17 +427,13 @@ local function getBox2D(char)
     if h < 8 then h = 8 end
     local w = h * 0.5
     local cx = topScreen.X
-    local leftX = cx - w / 2
-    local rightX = cx + w / 2
-    local topY = topScreen.Y - 8
-    local bottomY = botScreen.Y
-    return leftX, topY, rightX, bottomY
+    return cx - w / 2, topScreen.Y - 8, cx + w / 2, botScreen.Y
 end
 
--- ── Роль: кэш на 0.15 сек ──
+-- Кэш ролей обновляем чаще, но не каждый кадр
 local roleCache = {}
 local roleCacheTime = 0
-local ROLE_CACHE_TTL = 0.15
+local ROLE_CACHE_TTL = 0.05  -- 0.05 сек = мгновенно после смены
 
 local function refreshRoleCache()
     for _, p in ipairs(Players:GetPlayers()) do
@@ -374,7 +444,7 @@ local function refreshRoleCache()
     roleCacheTime = tick()
 end
 
--- ── Основной цикл ESP ──
+-- Основной цикл ESP
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
     if tick() - roleCacheTime > ROLE_CACHE_TTL then
@@ -413,7 +483,7 @@ track(RunService.RenderStepped:Connect(function()
                     obj.highlight.Enabled = (esp.chams or esp.roleESP)
                 end
 
-                -- НИК крепится к голове (без бокса) — не отстаёт
+                -- НИК крепится к голове (без бокса) — не плавает
                 if esp.name and obj.name then
                     local headPart = char:FindFirstChild("Head")
                     local headPos = (headPart and headPart.Position or hrp2.Position) + Vector3.new(0, 1.2, 0)
@@ -431,7 +501,6 @@ track(RunService.RenderStepped:Connect(function()
                     if obj.name then obj.name.Visible = false end
                 end
 
-                -- Бокс / дист / трейсер / HP — от getBox2D
                 local leftX, topY, rightX, bottomY = getBox2D(char)
                 if leftX then
                     local w = rightX - leftX
@@ -523,7 +592,6 @@ track(RunService.RenderStepped:Connect(function()
                     if obj.corners then for _, l in ipairs(obj.corners) do if l then l.Visible = false end end end
                     if obj.dist then obj.dist.Visible = false end
                     if obj.tracer then obj.tracer.Visible = false end
-                    -- НИК и HIGHLIGHT не трогаем
                 end
             end
         else
@@ -541,7 +609,7 @@ track(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- ── Coin ESP ──
+-- Coin ESP
 local coinHighlights = {}
 task.spawn(function()
     while not HUB.dead do
@@ -573,7 +641,6 @@ task.spawn(function()
     end
 end)
 
--- ── World ──
 VisualSub:AddSection("World")
 local fullbright = false
 local savedLighting = { Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime, FogEnd = Lighting.FogEnd, GlobalShadows = Lighting.GlobalShadows, Ambient = Lighting.Ambient }
