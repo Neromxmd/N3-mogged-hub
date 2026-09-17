@@ -1215,4 +1215,389 @@ function Window:AddTab(opts)
     elseif headerIconElement:IsA("TextLabel") then headerIconElement.TextColor3 = C.White end
 
     make("TextLabel", { Text = name, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(54, 17), Size = UDim2.new(1, -70, 0, 14), Parent = header })
-    make("TextLabel", { Text = opts.Subtitle or "", Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment
+    make("TextLabel", { Text = opts.Subtitle or "", Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(54, 33), Size = UDim2.new(1, -70, 0, 12), Parent = header })
+
+    local pillBar = make("Frame", { Position = UDim2.fromOffset(16, 54), Size = UDim2.new(1, -32, 0, 24), BackgroundTransparency = 1, ClipsDescendants = true, Parent = header })
+    local pillScroll = make("ScrollingFrame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X, AutomaticCanvasSize = Enum.AutomaticSize.X, CanvasSize = UDim2.new(), ClipsDescendants = true, Parent = pillBar })
+    table.insert(win._noDrag, pillScroll)
+    local pillRow = make("Frame", { AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 1, 0), BackgroundTransparency = 1, Parent = pillScroll })
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8), Parent = pillRow })
+    make("Frame", { Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = C.Border, Parent = header })
+    local pagesHolder = make("Frame", { Position = UDim2.fromOffset(0, 88), Size = UDim2.new(1, 0, 1, -88), BackgroundTransparency = 1, Parent = page })
+
+    local tab = setmetatable({
+        _window = win,
+        _hBtn = hBtn, _hLabel = hLabel, _hIconElement = hIconElement,
+        _page = page, _pillBar = pillBar, _pillScroll = pillScroll, _pillRow = pillRow,
+        _pagesHolder = pagesHolder,
+        _subTabs = {}, _activeSub = nil,
+    }, Tab)
+
+    hBtn.MouseButton1Click:Connect(function() win:_selectTab(tab) end)
+    hBtn.MouseEnter:Connect(function()
+        if win._activeTab ~= tab then tween(hBtn, { BackgroundColor3 = C.HotbarHover }) end
+    end)
+    hBtn.MouseLeave:Connect(function()
+        tween(hBtn, { BackgroundColor3 = win._activeTab == tab and C.HotbarActive or C.HotbarBg })
+    end)
+
+    table.insert(self._tabs, tab)
+    if not self._activeTab then self:_selectTab(tab) end
+    return tab
+end
+
+function Tab:_selectSub(sub)
+    if self._activeSub == sub then return end
+    local prev = self._activeSub; self._activeSub = sub
+    if prev then
+        prev._page.Visible = false
+        paint(prev._pill, "BackgroundColor3", "WindowBg")
+        paint(prev._pill, "TextColor3", "TextGray")
+    end
+    sub._page.Visible = true
+    paint(sub._pill, "BackgroundColor3", "PillActive")
+    paint(sub._pill, "TextColor3", "White")
+end
+
+function Tab:AddSubTab(name)
+    name = tostring(name or "General")
+    local tab = self
+    local pill = make("TextButton", { Text = name, Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = C.TextGray, BackgroundColor3 = C.WindowBg, Size = UDim2.new(0, 0, 0, 24), AutomaticSize = Enum.AutomaticSize.X, Parent = self._pillRow })
+    autoOrder(pill); corner(pill, 6); pad(pill, 0, 0, 12, 12)
+    table.insert(tab._window._noDrag, pill)
+    local page = make("ScrollingFrame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2, ScrollBarImageColor3 = C.Border, Parent = self._pagesHolder })
+    pad(page, 12, 16, 16, 16)
+    table.insert(tab._window._noDrag, page)
+    local card = make("Frame", { Size = UDim2.new(1, -32, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = C.CardBg, Parent = page })
+    corner(card, 10); stroke(card); pad(card, 14, 14, 16, 16)
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8), Parent = card })
+    local sub = setmetatable({ _tab = tab, _window = tab._window, _pill = pill, _page = page, _card = card }, SubTab)
+    pill.MouseButton1Click:Connect(function() tab:_selectSub(sub) end)
+    pill.MouseEnter:Connect(function() if tab._activeSub ~= sub then tween(pill, { BackgroundColor3 = C.NavHover }) end end)
+    pill.MouseLeave:Connect(function() tween(pill, { BackgroundColor3 = tab._activeSub == sub and C.PillActive or C.WindowBg }) end)
+    table.insert(self._subTabs, sub)
+    if not self._activeSub then self:_selectSub(sub) end
+    return sub
+end
+
+local function newRow(card, h)
+    local r = make("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundTransparency = 1, Parent = card }); autoOrder(r); return r
+end
+local function rowLabels(row, name, desc, rr)
+    rr = rr or 0
+    make("TextLabel", { Text = name, Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 0), Size = desc and UDim2.new(1, -rr, 0, 14) or UDim2.new(1, -rr, 1, 0), Parent = row })
+    if desc then make("TextLabel", { Text = desc, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 16), Size = UDim2.new(1, -rr, 0, 12), Parent = row }) end
+end
+
+function SubTab:AddSection(opts)
+    if type(opts) == "string" then opts = { Name = opts } end; opts = opts or {}
+    local row = make("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, Parent = self._card }); autoOrder(row)
+    local tick = make("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -4), Size = UDim2.fromOffset(3, 11), BackgroundColor3 = C.Accent, Parent = row }); corner(tick, 2)
+    make("TextLabel", { Text = string.upper(tostring(opts.Name or "Section")), Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = C.TextGray, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom, BackgroundTransparency = 1, Position = UDim2.fromOffset(9, 0), Size = UDim2.new(1, -9, 1, -3), Parent = row })
+    make("Frame", { Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = C.Border, Parent = row })
+    return row
+end
+
+function SubTab:AddToggle(opts)
+    opts = opts or {}; local value = opts.Default == true
+    local row = newRow(self._card, 30); rowLabels(row, opts.Name or "Toggle", opts.Description, 44)
+    local pill = make("TextButton", { Text = "", Size = UDim2.fromOffset(34, 18), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = C.Badge, Parent = row })
+    circle(pill)
+    stroke(pill, C.Accent)
+    local knob = make("Frame", { Size = UDim2.fromOffset(14, 14), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 2, 0.5, 0), BackgroundColor3 = C.KnobOff, Parent = pill })
+    circle(knob)
+    local function render(a)
+        local kp = value and UDim2.new(0, 18, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+        paint(pill, "BackgroundColor3", value and "Accent" or "Badge", not a)
+        paint(knob, "BackgroundColor3", value and "KnobAccent" or "KnobOff", not a)
+        if a then tween(knob, { Position = kp }) else knob.Position = kp end
+    end
+    local function set(v) v = v == true; if v == value then return end; value = v; render(true); fire(opts.Callback, value); Library:QueueAutoSave() end
+    pill.MouseButton1Click:Connect(function() set(not value) end); render(false)
+    return registerFlag(opts.Flag, "toggle", { Set = function(_, v) set(v) end, Get = function() return value end })
+end
+
+function SubTab:AddButton(opts)
+    opts = opts or {}
+    local primary = opts.Primary == true or opts.Style == "primary"
+    local btn = make("TextButton", { Text = opts.Name or "Button", Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = primary and C.AccentText or C.TextGray, Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = primary and C.Accent or C.Element, Parent = self._card })
+    autoOrder(btn); corner(btn, 6)
+    if primary then btn.Font = Enum.Font.GothamBold end
+    btn.MouseEnter:Connect(function() if primary then tween(btn, { BackgroundTransparency = 0.14 }) else tween(btn, { BackgroundColor3 = C.ElementHover }) end end)
+    btn.MouseLeave:Connect(function() if primary then tween(btn, { BackgroundTransparency = 0 }) else tween(btn, { BackgroundColor3 = C.Element }) end end)
+    btn.MouseButton1Click:Connect(function() fire(opts.Callback) end)
+    return btn
+end
+
+function SubTab:AddLabel(opts)
+    if type(opts) == "string" then opts = { Text = opts } end; opts = opts or {}
+    local lbl = make("TextLabel", { Text = tostring(opts.Text or "Label"), Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16), Parent = self._card })
+    autoOrder(lbl)
+    return { Set = function(_, t) lbl.Text = tostring(t) end, Get = function() return lbl.Text end, Instance = lbl }
+end
+
+function SubTab:AddParagraph(opts)
+    opts = opts or {}
+    local card = make("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = self._card }); autoOrder(card)
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 3), Parent = card })
+    if opts.Title then
+        make("TextLabel", { Text = tostring(opts.Title), Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16), LayoutOrder = 1, Parent = card })
+    end
+    local body = make("TextLabel", { Text = tostring(opts.Text or opts.Content or ""), Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), LayoutOrder = 2, Parent = card })
+    return { Set = function(_, t) body.Text = tostring(t) end, Get = function() return body.Text end, Instance = body }
+end
+
+function SubTab:AddSlider(opts)
+    opts = opts or {}
+    local mn = opts.Min or 0; local mx = opts.Max or 100; local sf = opts.Suffix or ""
+    local value = math.clamp(opts.Default or mn, mn, mx)
+    local row = newRow(self._card, 32)
+    make("TextLabel", { Text = opts.Name or "Slider", Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 0), Size = UDim2.new(0.6, 0, 0, 14), Parent = row })
+    local vl = make("TextLabel", { Text = tostring(value) .. sf, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Right, BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 1), Size = UDim2.new(1, 0, 0, 13), Parent = row })
+    local track = make("Frame", { Position = UDim2.fromOffset(0, 24), Size = UDim2.new(1, 0, 0, 4), BackgroundColor3 = C.TrackBg, Parent = row }); circle(track)
+    local fill = make("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = C.Accent, Parent = track }); circle(fill)
+    local knob = make("Frame", { Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.White, ZIndex = 2, Parent = track }); circle(knob); stroke(knob, C.Accent)
+    local hit = make("TextButton", { Text = "", BackgroundTransparency = 1, Position = UDim2.new(0, -6, 0, 16), Size = UDim2.new(1, 12, 0, 20), Parent = row })
+    local function apply(v, a, fc)
+        value = math.clamp(math.floor(v + 0.5), mn, mx)
+        local pct = mx > mn and (value - mn) / (mx - mn) or 0
+        vl.Text = tostring(value) .. sf
+        if a then tween(fill, { Size = UDim2.new(pct, 0, 1, 0) }); tween(knob, { Position = UDim2.new(pct, 0, 0.5, 0) })
+        else fill.Size = UDim2.new(pct, 0, 1, 0); knob.Position = UDim2.new(pct, 0, 0.5, 0) end
+        if fc then fire(opts.Callback, value); Library:QueueAutoSave() end
+    end
+    local function fromX(x) return mn + (mx - mn) * math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1) end
+    local dragging = false
+    hit.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true; apply(fromX(i.Position.X), true, true) end end)
+    trackConn(self._window, UserInputService.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then apply(fromX(i.Position.X), true, true) end end))
+    trackConn(self._window, UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end))
+    apply(value, false, false)
+    return registerFlag(opts.Flag, "slider", { Set = function(_, v) apply(v, true, true) end, Get = function() return value end })
+end
+
+function SubTab:AddDropdown(opts)
+    opts = opts or {}
+    local options = opts.Options or {}; local value = opts.Default or options[1] or ""
+    local IH = 22; local IP = 2; local LW = 160
+    local row = newRow(self._card, 30); rowLabels(row, opts.Name or "Dropdown", opts.Description, 130)
+    local btn = make("TextButton", { Text = "", Size = UDim2.fromOffset(120, 22), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = C.Element, Parent = row })
+    corner(btn, 6)
+    local vl = make("TextLabel", { Text = tostring(value), Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = C.TextGray, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -26, 1, 0), Parent = btn })
+    sortIcon(btn)
+    local win = self._window
+    local list = make("Frame", { Visible = false, Active = true, Size = UDim2.new(0, LW, 0, 0), BackgroundColor3 = C.Element, ClipsDescendants = true, ZIndex = 100, Parent = win.ScreenGui })
+    corner(list, 6); stroke(list); table.insert(win._noDrag, list)
+    local sf = make("ScrollingFrame", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Border, ZIndex = 101, Parent = list })
+    pad(sf, 4, 4, 4, 4)
+    make("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, IP), Parent = sf })
+    local open = false; local cg = 0; local oc = {}; local ob = {}
+    local function repo()
+        local inset = GuiService:GetGuiInset(); local p, s = btn.AbsolutePosition, btn.AbsoluteSize
+        list.Position = UDim2.fromOffset(p.X + inset.X + s.X - LW, p.Y + inset.Y + s.Y + 4)
+    end
+    local function calcH()
+        local vc = math.min(math.max(#options, 1), 5)
+        return vc * IH + math.max(vc - 1, 0) * IP + 8
+    end
+    local function closeDD()
+        if not open then return end; open = false; cg = cg + 1
+        for _, c in ipairs(oc) do c:Disconnect() end; table.clear(oc)
+        tween(list, { Size = UDim2.new(0, LW, 0, 0) })
+        local g = cg; task.delay(0.16, function() if g == cg and not open then list.Visible = false end end)
+    end
+    local function rebuild()
+        for _, b in ipairs(ob) do if b and b.Parent then b:Destroy() end end; table.clear(ob)
+        for _, o in ipairs(options) do
+            local os = tostring(o)
+            local ob2 = make("TextButton", { Text = os, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = C.TextGray, Size = UDim2.new(1, -8, 0, IH), BackgroundColor3 = C.Element, Parent = sf })
+            autoOrder(ob2); corner(ob2, 4)
+            make("UIPadding", { PaddingLeft = UDim.new(0, 8), Parent = ob2 })
+            ob2.TextXAlignment = Enum.TextXAlignment.Left
+            ob2.MouseEnter:Connect(function() tween(ob2, { BackgroundColor3 = C.ElementHover, TextColor3 = C.White }) end)
+            ob2.MouseLeave:Connect(function() tween(ob2, { BackgroundColor3 = C.Element, TextColor3 = C.TextGray }) end)
+            ob2.MouseButton1Click:Connect(function() value = o; vl.Text = os; closeDD(); fire(opts.Callback, o); Library:QueueAutoSave() end)
+            table.insert(ob, ob2)
+        end
+    end
+    rebuild()
+    local function setOpen(o)
+        if open == o then return end
+        if o then
+            open = true; cg = cg + 1; repo(); list.Visible = true; tween(list, { Size = UDim2.new(0, LW, 0, calcH()) })
+            table.insert(oc, UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    local pos = Vector2.new(input.Position.X, input.Position.Y)
+                    if not isInside(btn, pos) and not isInside(list, pos) then closeDD() end
+                end
+            end))
+        else closeDD() end
+    end
+    btn.MouseButton1Click:Connect(function() setOpen(not open) end)
+    return registerFlag(opts.Flag, "dropdown", {
+        Set = function(_, o) value = o; vl.Text = tostring(o); fire(opts.Callback, o); Library:QueueAutoSave() end,
+        Get = function() return value end,
+        SetOptions = function(_, no)
+            options = no or {}; local se = false
+            for _, o in ipairs(options) do if o == value then se = true; break end end
+            if not se and options[1] then value = options[1]; vl.Text = tostring(value) end
+            rebuild(); if open then tween(list, { Size = UDim2.new(0, LW, 0, calcH()) }) end
+        end,
+    })
+end
+
+function SubTab:AddKeybind(opts)
+    opts = opts or {}
+    local key = opts.Default
+    if typeof(key) ~= "EnumItem" then key = nil end
+    local row = newRow(self._card, 30); rowLabels(row, opts.Name or "Keybind", opts.Description, 80)
+    local btn = make("TextButton", { Text = key and key.Name or "None", Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = C.TextGray, Size = UDim2.fromOffset(70, 22), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = C.Element, Parent = row })
+    corner(btn, 6)
+    local listening = false; local conn
+    local function setKey(k)
+        if k ~= nil and typeof(k) ~= "EnumItem" then return end
+        key = k; btn.Text = key and key.Name or "None"
+        if opts.OnKeyChanged then fire(opts.OnKeyChanged, key) end
+    end
+    local function stopListening()
+        listening = false
+        if conn then conn:Disconnect(); conn = nil end
+        btn.Text = key and key.Name or "None"
+        tween(btn, { BackgroundColor3 = C.Element, TextColor3 = C.TextGray })
+    end
+    btn.MouseButton1Click:Connect(function()
+        if listening then stopListening(); return end
+        listening = true; btn.Text = "..."; tween(btn, { BackgroundColor3 = C.PillActive, TextColor3 = C.White })
+        conn = UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                if input.KeyCode == Enum.KeyCode.Escape then setKey(nil) else setKey(input.KeyCode) end
+                stopListening()
+            end
+        end)
+    end)
+    local pressConn = UserInputService.InputBegan:Connect(function(input, gp)
+        if gp or listening or not key then return end
+        if UserInputService:GetFocusedTextBox() then return end
+        if input.KeyCode == key then fire(opts.OnPress or opts.Callback, key) end
+    end)
+    trackConn(self._window, pressConn)
+    return registerFlag(opts.Flag, "keybind", { Set = function(_, k) setKey(k) end, Get = function() return key end })
+end
+
+function SubTab:AddColorPicker(opts)
+    opts = opts or {}
+    local function hexToColor(hex)
+        hex = string.gsub(tostring(hex or ""), "#", "")
+        if #hex ~= 6 then return nil end
+        local r = tonumber(hex:sub(1, 2), 16); local g = tonumber(hex:sub(3, 4), 16); local b = tonumber(hex:sub(5, 6), 16)
+        if not (r and g and b) then return nil end
+        return Color3.fromRGB(r, g, b)
+    end
+    local function colorToHex(c) return string.format("#%02X%02X%02X", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)) end
+    local value = (typeof(opts.Default) == "Color3" and opts.Default) or hexToColor(opts.Default) or Color3.fromRGB(255, 255, 255)
+    local h, s, v = value:ToHSV()
+    local row = newRow(self._card, 30); rowLabels(row, opts.Name or "Color", opts.Description, 44)
+    local swatch = make("TextButton", { Text = "", Size = UDim2.fromOffset(34, 18), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = value, Parent = row })
+    corner(swatch, 5); stroke(swatch, C.Border)
+    local win = self._window
+    local PW = 200
+    local panel = make("Frame", { Visible = false, Active = true, Size = UDim2.fromOffset(PW, 0), BackgroundColor3 = C.Element, ClipsDescendants = true, ZIndex = 100, Parent = win.ScreenGui })
+    corner(panel, 6); stroke(panel); table.insert(win._noDrag, panel)
+    local inner = make("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(PW, 168), BackgroundTransparency = 1, ZIndex = 101, Parent = panel })
+    pad(inner, 10, 10, 10, 10)
+    local svBox = make("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 110), BackgroundColor3 = Color3.fromHSV(h, 1, 1), ZIndex = 101, Parent = inner })
+    corner(svBox, 4)
+    make("UIGradient", { Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromHSV(h, 1, 1)), Parent = svBox })
+    local svBlack = make("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), ZIndex = 102, Parent = svBox }); corner(svBlack, 4)
+    make("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }), Parent = svBlack })
+    local svCursor = make("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 103, Parent = svBox }); circle(svCursor); stroke(svCursor, Color3.new(0, 0, 0))
+    local svHit = make("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 104, Parent = svBox })
+    local hexHolder = make("Frame", { Position = UDim2.fromOffset(0, 140), Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = C.WindowBg, ZIndex = 101, Parent = inner }); corner(hexHolder, 5)
+    local hexBox = make("TextBox", { Text = colorToHex(value), PlaceholderText = "#FFFFFF", PlaceholderColor3 = C.Placeholder, Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Center, BackgroundTransparency = 1, ClearTextOnFocus = false, Size = UDim2.fromScale(1, 1), ZIndex = 102, Parent = hexHolder })
+    local function applyVisuals()
+        local hueColor = Color3.fromHSV(h, 1, 1)
+        swatch.BackgroundColor3 = value
+        svBox.BackgroundColor3 = hueColor
+        svCursor.Position = UDim2.new(s, 0, 1 - v, 0)
+        hexBox.Text = colorToHex(value)
+    end
+    local function recompute(fc)
+        value = Color3.fromHSV(h, s, v); applyVisuals()
+        if fc then fire(opts.Callback, value); Library:QueueAutoSave() end
+    end
+    local svDragging = false
+    local function svFrom(px, py)
+        local p, sz = svBox.AbsolutePosition, svBox.AbsoluteSize
+        s = math.clamp((px - p.X) / math.max(sz.X, 1), 0, 1)
+        v = 1 - math.clamp((py - p.Y) / math.max(sz.Y, 1), 0, 1)
+    end
+    svHit.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then svDragging = true; svFrom(i.Position.X, i.Position.Y); recompute(false) end end)
+    trackConn(win, UserInputService.InputChanged:Connect(function(i)
+        if svDragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then svFrom(i.Position.X, i.Position.Y); recompute(false) end
+    end))
+    trackConn(win, UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then svDragging = false end end))
+    hexBox.FocusLost:Connect(function()
+        local c = hexToColor(hexBox.Text)
+        if c then value = c; h, s, v = c:ToHSV(); recompute(true) else hexBox.Text = colorToHex(value) end
+    end)
+    local open = false; local cg = 0; local oc = {}
+    local function repo()
+        local inset = GuiService:GetGuiInset(); local p, sz = swatch.AbsolutePosition, swatch.AbsoluteSize
+        panel.Position = UDim2.fromOffset(p.X + inset.X + sz.X - PW, p.Y + inset.Y + sz.Y + 4)
+    end
+    local function closePanel()
+        if not open then return end; open = false; cg = cg + 1
+        for _, c in ipairs(oc) do c:Disconnect() end; table.clear(oc)
+        tween(panel, { Size = UDim2.fromOffset(PW, 0) })
+        local g = cg; task.delay(0.16, function() if g == cg and not open then panel.Visible = false end end)
+    end
+    local function setOpen(o)
+        if open == o then return end
+        if o then
+            open = true; cg = cg + 1; repo(); panel.Visible = true; tween(panel, { Size = UDim2.fromOffset(PW, 168) })
+            table.insert(oc, UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    local pos = Vector2.new(input.Position.X, input.Position.Y)
+                    if not isInside(swatch, pos) and not isInside(panel, pos) then closePanel() end
+                end
+            end))
+        else closePanel() end
+    end
+    swatch.MouseButton1Click:Connect(function() setOpen(not open) end)
+    recompute(false)
+    return registerFlag(opts.Flag, "color", {
+        Set = function(_, c)
+            c = (typeof(c) == "Color3" and c) or hexToColor(c)
+            if not c then return end
+            value = c; h, s, v = c:ToHSV(); recompute(true)
+        end,
+        Get = function() return value end,
+        GetHex = function() return colorToHex(value) end,
+    })
+end
+
+function SubTab:AddInput(opts)
+    opts = opts or {}
+    local row = newRow(self._card, 30); rowLabels(row, opts.Name or "Input", opts.Description, 120)
+    local holder = make("Frame", { Size = UDim2.fromOffset(110, 22), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = C.Element, Parent = row })
+    corner(holder, 6)
+    local box = make("TextBox", { Text = opts.Default or "", PlaceholderText = opts.Placeholder or "...", PlaceholderColor3 = C.Placeholder, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = C.TextGray, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, ClearTextOnFocus = false, ClipsDescendants = true, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -30, 1, 0), Parent = holder })
+    inputIcon(holder)
+    box.FocusLost:Connect(function(ep) fire(opts.Callback, box.Text, ep); Library:QueueAutoSave() end)
+    return registerFlag(opts.Flag, "input", { Set = function(_, t) box.Text = tostring(t) end, Get = function() return box.Text end })
+end
+
+function Library:AddSubTabPlaceholder(subTab, text)
+    if not subTab or not subTab._card then return end
+    local lbl = make("TextLabel", {
+        Text = tostring(text or "soon..."),
+        Font = Enum.Font.GothamBold, TextSize = 20,
+        TextColor3 = C.TextDim, BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 60),
+        Parent = subTab._card,
+    })
+    autoOrder(lbl)
+    return lbl
+end
+
+return Library
