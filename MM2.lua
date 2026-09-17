@@ -1,5 +1,5 @@
 -- N3 mogg hub — MM2 script
--- Tabs: MM2 (no Rage, no Teleport), Others (soon...), Settings
+-- Tabs: MM2 (Player, Visual, Gameplay, System), Others (Aim, ESP), Settings
 
 local Library = _G.N3MoggLibrary
 if not Library then
@@ -65,10 +65,39 @@ local function GetLevel()
 end
 
 -- ════════════════════════════════════════════════════════════════════════════
--- ROLE TRACKER (мгновенное определение ролей)
+-- ROLE TRACKER (мгновенный, читает атрибуты Role)
 -- ════════════════════════════════════════════════════════════════════════════
--- Кэш ролей: [Player] = "Murderer" / "Sheriff" / "Innocent" / "Dead"
 local roleMemory = {}
+
+local ROLE_ATTR_NAMES = { "Role", "role", "ROLE", "Team", "team" }
+local ROLE_VALUES = {
+    ["murderer"] = "Murderer",
+    ["sheriff"]  = "Sheriff",
+    ["hero"]     = "Hero",
+    ["innocent"] = "Innocent",
+}
+
+local function ReadRoleAttr(inst)
+    if not inst then return nil end
+    for _, attrName in ipairs(ROLE_ATTR_NAMES) do
+        local ok, val = pcall(function() return inst:GetAttribute(attrName) end)
+        if ok and type(val) == "string" then
+            local norm = ROLE_VALUES[val:lower()]
+            if norm then return norm end
+        end
+    end
+    for _, childName in ipairs({ "Role", "Team", "role" }) do
+        local child = inst:FindFirstChild(childName)
+        if child and (child:IsA("StringValue") or child:IsA("ValueBase")) then
+            local ok, val = pcall(function() return tostring(child.Value) end)
+            if ok then
+                local norm = ROLE_VALUES[val:lower()]
+                if norm then return norm end
+            end
+        end
+    end
+    return nil
+end
 
 local function isToolRole(t)
     if not t or not t:IsA("Tool") then return nil end
@@ -78,87 +107,49 @@ local function isToolRole(t)
     return nil
 end
 
--- Главный GetRole:
--- 1) Атрибуты Role (мгновенно, если игра выставляет)
--- 2) Если умер — Dead
--- 3) Инвентарь (нож/пистолет)
--- 4) Память (если когда-то видели роль — помним)
 local function GetRole(plr)
     if plr == nil then plr = LocalPlayer end
-    if plr == LocalPlayer then
-        -- Для себя тоже проверяем атрибут
-        local myAttr = plr:GetAttribute("Role")
-        if myAttr == "Murderer" then return "Murderer" end
-        if myAttr == "Sheriff" then return "Sheriff" end
-        if myAttr == "Hero" then return "Hero" end
-    end
 
-    -- 1) Атрибут Role на игроке
-    local roleAttr = plr:GetAttribute("Role")
-    if roleAttr == "Murderer" then roleMemory[plr] = "Murderer"; return "Murderer" end
-    if roleAttr == "Sheriff" then roleMemory[plr] = "Sheriff"; return "Sheriff" end
-    if roleAttr == "Hero" then roleMemory[plr] = "Hero"; return "Hero" end
-    if roleAttr == "Innocent" then roleMemory[plr] = "Innocent"; return "Innocent" end
+    local r = ReadRoleAttr(plr)
+    if r then roleMemory[plr] = r; return r end
 
     local char = plr.Character
     if char then
-        -- 2) Атрибут Role на персонаже
-        local charAttr = char:GetAttribute("Role")
-        if charAttr == "Murderer" then roleMemory[plr] = "Murderer"; return "Murderer" end
-        if charAttr == "Sheriff" then roleMemory[plr] = "Sheriff"; return "Sheriff" end
-        if charAttr == "Hero" then roleMemory[plr] = "Hero"; return "Hero" end
-        if charAttr == "Innocent" then roleMemory[plr] = "Innocent"; return "Innocent" end
+        r = ReadRoleAttr(char)
+        if r then roleMemory[plr] = r; return r end
 
-        -- 3) Проверка жив ли
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum and hum.Health <= 0 then
             roleMemory[plr] = "Dead"
             return "Dead"
         end
 
-        -- 4) Инвентарь — экипировано
         for _, t in ipairs(char:GetChildren()) do
-            local r = isToolRole(t)
+            r = isToolRole(t)
             if r then roleMemory[plr] = r; return r end
         end
     end
 
-    -- 5) Инвентарь — Backpack
     local bp = plr:FindFirstChild("Backpack")
     if bp then
         for _, t in ipairs(bp:GetChildren()) do
-            local r = isToolRole(t)
+            r = isToolRole(t)
             if r then roleMemory[plr] = r; return r end
         end
     end
 
-    -- 6) Если когда-то видели роль — помним её (роль не меняется в раунде)
     if roleMemory[plr] then return roleMemory[plr] end
-
-    -- 7) Пока ничего не знаем — Unknown (не Innocent, чтобы не путать)
     return "Unknown"
 end
 
--- Сброс памяти ролей между раундами
--- Отслеживаем момент, когда у всех игроков пропадают ножи/пистолеты → новый раунд
-local function clearRoleMemory()
-    roleMemory = {}
-end
-
--- Следим за спавном персонажа — новая роль
-for _, p in ipairs(Players:GetPlayers()) do
+local function hookCharacterAdded(p)
     p.CharacterAdded:Connect(function()
-        task.wait(0.2)
-        -- При респавне — сбрасываем память для этого игрока
+        task.wait(0.1)
         roleMemory[p] = nil
     end)
 end
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
-        task.wait(0.2)
-        roleMemory[p] = nil
-    end)
-end)
+for _, p in ipairs(Players:GetPlayers()) do hookCharacterAdded(p) end
+Players.PlayerAdded:Connect(hookCharacterAdded)
 
 local function RoleColor(role)
     if role == "Murderer" then return Color3.fromRGB(255, 60, 60)
@@ -166,7 +157,7 @@ local function RoleColor(role)
     elseif role == "Hero" then return Color3.fromRGB(60, 255, 255)
     elseif role == "Innocent" then return Color3.fromRGB(80, 220, 120)
     elseif role == "Dead" then return Color3.fromRGB(120, 120, 120)
-    else return Color3.fromRGB(180, 180, 180) end  -- Unknown — серый
+    else return Color3.fromRGB(180, 180, 180) end
 end
 local function FormatMoney(v) return tostring(math.floor(tonumber(v) or 0)) end
 
@@ -410,7 +401,6 @@ VisualSub:AddSlider({ Name = "Text Size", Min = 10, Max = 20, Default = 14, Flag
 VisualSub:AddSlider({ Name = "Max Distance", Min = 0, Max = 5000, Default = 1000, Suffix = "m", Flag = "esp_maxdist",
     Callback = function(v) esp.maxDistance = v end })
 
--- Быстрый расчёт бокса (2 точки: голова → низ)
 local function getBox2D(char)
     if not char then return nil end
     local head = char:FindFirstChild("Head")
@@ -430,10 +420,9 @@ local function getBox2D(char)
     return cx - w / 2, topScreen.Y - 8, cx + w / 2, botScreen.Y
 end
 
--- Кэш ролей обновляем чаще, но не каждый кадр
 local roleCache = {}
 local roleCacheTime = 0
-local ROLE_CACHE_TTL = 0.05  -- 0.05 сек = мгновенно после смены
+local ROLE_CACHE_TTL = 0.05
 
 local function refreshRoleCache()
     for _, p in ipairs(Players:GetPlayers()) do
@@ -444,7 +433,6 @@ local function refreshRoleCache()
     roleCacheTime = tick()
 end
 
--- Основной цикл ESP
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
     if tick() - roleCacheTime > ROLE_CACHE_TTL then
@@ -475,7 +463,6 @@ track(RunService.RenderStepped:Connect(function()
                 if obj.hpText then obj.hpText.Visible = false end
                 if obj.highlight then obj.highlight.Enabled = false end
             else
-                -- Highlight (Chams)
                 if obj.highlight then
                     if obj.highlight.Adornee ~= char then pcall(function() obj.highlight.Adornee = char end) end
                     obj.highlight.FillColor = color
@@ -483,7 +470,6 @@ track(RunService.RenderStepped:Connect(function()
                     obj.highlight.Enabled = (esp.chams or esp.roleESP)
                 end
 
-                -- НИК крепится к голове (без бокса) — не плавает
                 if esp.name and obj.name then
                     local headPart = char:FindFirstChild("Head")
                     local headPos = (headPart and headPart.Position or hrp2.Position) + Vector3.new(0, 1.2, 0)
@@ -609,7 +595,6 @@ track(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- Coin ESP
 local coinHighlights = {}
 task.spawn(function()
     while not HUB.dead do
@@ -797,9 +782,203 @@ end })
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: OTHERS
 -- ════════════════════════════════════════════════════════════════════════════
-local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "More games soon", Icon = "grid" })
-local OthersSub = OthersTab:AddSubTab("Coming Soon")
-OthersSub:AddParagraph({ Title = "soon...", Text = "Other games will be added here later." })
+local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "Extra functions", Icon = "grid" })
+
+-- ── Others → Aim ──
+local OthersAim = OthersTab:AddSubTab("Aim")
+
+local aimCfg = {
+    enabled    = false,
+    fov        = 120,
+    targetPart = "Head",
+    key        = Enum.UserInputType.MouseButton2,
+    teamCheck  = false,
+}
+local aimFovCircle = nil
+
+if hasDrawing then
+    local ok, c = pcall(function() return Drawing.new("Circle") end)
+    if ok and c then
+        c.Thickness = 1.5
+        c.NumSides = 64
+        c.Radius = aimCfg.fov
+        c.Filled = false
+        c.Visible = false
+        c.Color = Color3.fromRGB(255, 255, 255)
+        c.Transparency = 0.6
+        aimFovCircle = trackDrawing(c)
+    end
+end
+
+OthersAim:AddSection("Aim Assist")
+OthersAim:AddToggle({
+    Name = "Aim Assist", Default = false, Flag = "others_aim_enabled",
+    Description = "Наводит камеру на ближайшего игрока при зажатой клавише",
+    Callback = function(v) aimCfg.enabled = v end,
+})
+OthersAim:AddSlider({
+    Name = "FOV Radius", Min = 30, Max = 500, Default = 120, Suffix = "px", Flag = "others_aim_fov",
+    Callback = function(v) aimCfg.fov = v; if aimFovCircle then aimFovCircle.Radius = v end end,
+})
+OthersAim:AddDropdown({
+    Name = "Target Part", Options = { "Head", "HumanoidRootPart", "UpperTorso" },
+    Default = "Head", Flag = "others_aim_part",
+    Callback = function(v) aimCfg.targetPart = v end,
+})
+OthersAim:AddDropdown({
+    Name = "Aim Key", Options = { "Right Mouse", "Left Mouse", "E", "Q", "Shift" },
+    Default = "Right Mouse", Flag = "others_aim_key",
+    Callback = function(v)
+        if v == "Right Mouse" then aimCfg.key = Enum.UserInputType.MouseButton2
+        elseif v == "Left Mouse" then aimCfg.key = Enum.UserInputType.MouseButton1
+        elseif v == "E" then aimCfg.key = Enum.KeyCode.E
+        elseif v == "Q" then aimCfg.key = Enum.KeyCode.Q
+        elseif v == "Shift" then aimCfg.key = Enum.KeyCode.LeftShift
+        end
+    end,
+})
+OthersAim:AddToggle({
+    Name = "Team Check", Default = false, Flag = "others_aim_teamcheck",
+    Description = "Игнорировать игроков из своей команды",
+    Callback = function(v) aimCfg.teamCheck = v end,
+})
+
+local function isAimKeyDown(key)
+    if typeof(key) == "EnumItem" then
+        if key.EnumType == Enum.UserInputType then
+            return UserInputService:IsMouseButtonPressed(key)
+        elseif key.EnumType == Enum.KeyCode then
+            return UserInputService:IsKeyDown(key)
+        end
+    end
+    return false
+end
+
+track(RunService.RenderStepped:Connect(function()
+    if HUB.dead then return end
+    if aimFovCircle then
+        aimFovCircle.Visible = aimCfg.enabled
+        aimFovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    end
+    if not aimCfg.enabled then return end
+    if not isAimKeyDown(aimCfg.key) then return end
+
+    local closest, bestDist = nil, aimCfg.fov
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            if aimCfg.teamCheck and plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team then
+                -- skip
+            else
+                local part = plr.Character:FindFirstChild(aimCfg.targetPart)
+                    or plr.Character:FindFirstChild("Head")
+                    or plr.Character:FindFirstChild("HumanoidRootPart")
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                if part and hum and hum.Health > 0 then
+                    local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen and pos.Z > 0 then
+                        local screenPos = Vector2.new(pos.X, pos.Y)
+                        local mousePos = UserInputService:GetMouseLocation()
+                        local d = (screenPos - mousePos).Magnitude
+                        if d < bestDist then
+                            bestDist = d
+                            closest = part
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if closest then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
+    end
+end))
+
+-- ── Others → ESP ──
+local OthersESP = OthersTab:AddSubTab("ESP")
+
+local simpleEspCfg = {
+    enabled  = false,
+    color    = Color3.fromRGB(255, 255, 255),
+    textSize = 14,
+}
+local simpleEspList = {}
+
+local function makeSimpleEspText()
+    if not hasDrawing then return nil end
+    local ok, d = pcall(function() return Drawing.new("Text") end)
+    if not ok or not d then return nil end
+    d.Size = simpleEspCfg.textSize
+    d.Center = true
+    d.Outline = true
+    d.Font = 2
+    d.Color = simpleEspCfg.color
+    d.Visible = false
+    return trackDrawing(d)
+end
+
+local function addSimpleEsp(p)
+    if p == LocalPlayer or simpleEspList[p] then return end
+    simpleEspList[p] = makeSimpleEspText()
+end
+local function removeSimpleEsp(p)
+    if simpleEspList[p] then
+        pcall(function() simpleEspList[p]:Remove() end)
+        simpleEspList[p] = nil
+    end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do addSimpleEsp(p) end
+track(Players.PlayerAdded:Connect(addSimpleEsp))
+track(Players.PlayerRemoving:Connect(removeSimpleEsp))
+
+track(RunService.RenderStepped:Connect(function()
+    if HUB.dead then return end
+    for p, d in pairs(simpleEspList) do
+        if d then
+            local char = p.Character
+            local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if simpleEspCfg.enabled and head and hum and hum.Health > 0 then
+                local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.2, 0))
+                if onScreen and pos.Z > 0 then
+                    d.Text = p.Name
+                    d.Position = Vector2.new(pos.X, pos.Y)
+                    d.Visible = true
+                else
+                    d.Visible = false
+                end
+            else
+                d.Visible = false
+            end
+        end
+    end
+end))
+
+OthersESP:AddSection("Simple ESP")
+OthersESP:AddToggle({
+    Name = "Simple ESP", Default = false, Flag = "others_esp_enabled",
+    Description = "Простой ESP — ник над головой",
+    Callback = function(v) simpleEspCfg.enabled = v end,
+})
+OthersESP:AddColorPicker({
+    Name = "ESP Color", Default = Color3.fromRGB(255, 255, 255), Flag = "others_esp_color",
+    Callback = function(c)
+        simpleEspCfg.color = c
+        for _, d in pairs(simpleEspList) do
+            if d then pcall(function() d.Color = c end) end
+        end
+    end,
+})
+OthersESP:AddSlider({
+    Name = "Text Size", Min = 10, Max = 24, Default = 14, Flag = "others_esp_textsize",
+    Callback = function(v)
+        simpleEspCfg.textSize = v
+        for _, d in pairs(simpleEspList) do
+            if d then pcall(function() d.Size = v end) end
+        end
+    end,
+})
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: SETTINGS
