@@ -686,52 +686,46 @@ local keyInput = SecretSub:AddInput({
     Callback = function() end,
 })
 
-SecretSub:AddButton({
-    Name = "Unlock", Primary = true,
-    Callback = function()
-        if secretUnlocked then Notify("Secret", "Already unlocked!", "Info"); return end
-        local entered = ""
-        pcall(function() entered = keyInput:Get() end)
-        entered = tostring(entered or ""):lower():gsub("%s", "")
-        if entered == SECRET_KEY then
-            secretUnlocked = true
-            Notify("Secret", "Access granted! Extra features unlocked.", "Success", 4)
-            task.spawn(function()
-                -- Небольшая задержка для красоты
-                task.wait(0.3)
-                buildSecretFeatures()
-            end)
-        else
-            Notify("Secret", "Invalid key. Try again.", "Error", 3)
-        end
-    end,
+-- Отдельная подвкладка "Features" (пустая, наполняется после ключа)
+local SecretFeatures = SecretTab:AddSubTab("Features")
+local lockedLabel = SecretFeatures:AddParagraph({
+    Title = "🔒 Locked",
+    Text = "Enter the correct key in the 'Unlock' tab to reveal hidden features.",
 })
 
-SecretSub:AddParagraph({ Title = "Hint", Text = "Enter the secret key to unlock hidden features." })
-
--- Контейнер, куда будем добавлять секретные фичи после ввода ключа
-local SecretFeaturesHolder = SecretTab:AddSubTab("Features")
-SecretFeaturesHolder:AddParagraph({ Title = "Locked", Text = "🔒 Enter the correct key in the 'Unlock' tab to reveal hidden features." })
-
+-- Флаг состояния
 local secretBuilt = false
-function buildSecretFeatures()
+
+-- Скрытые функции (создаются один раз после ввода ключа)
+local secretEsp = {
+    enabled = false,
+    textList = {},
+}
+local aimbot = {
+    enabled = false,
+    radius = 120,
+    targetPart = "Head",
+}
+
+local function newSecretText()
+    if not hasDrawing then return nil end
+    local ok, d = pcall(function() return Drawing.new("Text") end)
+    if not ok or not d then return nil end
+    d.Size = 14; d.Center = true; d.Outline = true
+    d.Color = Color3.fromRGB(255, 50, 50); d.Font = 2; d.Visible = false
+    table.insert(HUB.drawings, d)
+    return d
+end
+
+local function buildSecretFeatures()
     if secretBuilt then return end
     secretBuilt = true
-    -- Убираем заглушку "Locked"
-    pcall(function() SecretFeaturesHolder:RemoveAll() end)
+
+    -- Скрываем метку "Locked"
+    pcall(function() lockedLabel:Set("✅ Unlocked", "Secret features are now available.") end)
 
     -- ── SECRET ESP ──
-    SecretFeaturesHolder:AddSection("Secret ESP")
-    local secretEsp = { enabled = false, textList = {} }
-    local function newSecretText()
-        if not hasDrawing then return nil end
-        local ok, d = pcall(function() return Drawing.new("Text") end)
-        if not ok or not d then return nil end
-        d.Size = 14; d.Center = true; d.Outline = true
-        d.Color = Color3.fromRGB(255, 50, 50); d.Font = 2; d.Visible = false
-        table.insert(HUB.drawings, d)
-        return d
-    end
+    SecretFeatures:AddSection("Secret ESP")
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then secretEsp.textList[p] = newSecretText() end
     end
@@ -766,15 +760,14 @@ function buildSecretFeatures()
             end
         end
     end))
-    SecretFeaturesHolder:AddToggle({
+    SecretFeatures:AddToggle({
         Name = "Secret ESP", Default = false, Flag = "secret_esp",
         Description = "Simple player name ESP (red)",
         Callback = function(v) secretEsp.enabled = v end,
     })
 
     -- ── SECRET AIMBOT ──
-    SecretFeaturesHolder:AddSection("Secret Aimbot")
-    local aimbot = { enabled = false, radius = 120, targetPart = "Head" }
+    SecretFeatures:AddSection("Secret Aimbot")
     track(RunService.RenderStepped:Connect(function()
         if HUB.dead or not aimbot.enabled then return end
         local mouseDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
@@ -797,24 +790,47 @@ function buildSecretFeatures()
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
         end
     end))
-    SecretFeaturesHolder:AddToggle({
+    SecretFeatures:AddToggle({
         Name = "Secret Aimbot", Default = false, Flag = "secret_aimbot",
         Description = "Hold right mouse to aim at nearest player",
         Callback = function(v) aimbot.enabled = v end,
     })
-    SecretFeaturesHolder:AddSlider({
+    SecretFeatures:AddSlider({
         Name = "Aimbot Radius", Min = 30, Max = 500, Default = 120, Suffix = "px", Flag = "secret_aim_radius",
         Callback = function(v) aimbot.radius = v end,
     })
-    SecretFeaturesHolder:AddDropdown({
+    SecretFeatures:AddDropdown({
         Name = "Target Part", Options = { "Head", "HumanoidRootPart", "UpperTorso" },
         Default = "Head", Flag = "secret_aim_part",
         Callback = function(v) aimbot.targetPart = v end,
     })
 
-    Notify("Secret", "Hidden features added: ESP & Aimbot.", "Success", 4)
+    Notify("Secret", "Unlocked: Secret ESP & Aimbot!", "Success", 4)
 end
 
+SecretSub:AddButton({
+    Name = "Unlock", Primary = true,
+    Callback = function()
+        if secretBuilt then
+            Notify("Secret", "Already unlocked!", "Info")
+            return
+        end
+        local entered = ""
+        pcall(function() entered = keyInput:Get() end)
+        entered = tostring(entered or ""):lower():gsub("%s", "")
+        if entered == SECRET_KEY then
+            Notify("Secret", "Access granted! Extra features unlocked.", "Success", 4)
+            task.spawn(function()
+                task.wait(0.2)
+                buildSecretFeatures()
+            end)
+        else
+            Notify("Secret", "Invalid key. Try again.", "Error", 3)
+        end
+    end,
+})
+
+SecretSub:AddParagraph({ Title = "Hint", Text = "Enter the secret key to unlock hidden features." })
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: SETTINGS
 -- ════════════════════════════════════════════════════════════════════════════
