@@ -9,7 +9,7 @@ local TextService      = game:GetService("TextService")
 local HttpService      = game:GetService("HttpService")
 local Workspace        = game:GetService("Workspace")
 
-local DEFAULT_LOGO = "rbxassetid://189623013"
+local DEFAULT_LOGO = "rbxassetid://134591276795300"
 local TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local NOTIFICATION_TWEEN = TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local PROFILE_TWEEN = TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -702,7 +702,7 @@ local function buildTagFrame(player)
     badgeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     badgeStroke.Parent = badge
     local badgeLabel = Instance.new("TextLabel")
-    badgeLabel.Text              = "Oxide"
+    badgeLabel.Text              = "N3"
     badgeLabel.Font              = Enum.Font.GothamBold
     badgeLabel.TextSize          = 8
     badgeLabel.TextColor3        = Color3.fromRGB(222, 236, 253)
@@ -889,7 +889,7 @@ local function tagRegister()
     if not ok or not res or not res.Body then return end
     local sok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
     if sok and type(data) == "table" and data.kick == true then
-        pcall(function() lp:Kick("[Oxide] Disconnected by admin") end)
+        pcall(function() lp:Kick("[N3 mogg hub] Disconnected by admin") end)
     end
 end
 local function tagFetchAndUpdate()
@@ -979,7 +979,7 @@ local Library = {
     Flags         = {},
     State         = {},
     _stateListeners = {},
-    ConfigFolder  = "OxideUI/configs",
+    ConfigFolder  = "N3MoggHub/configs",
     _windows      = {},
     _windowObjects= {},
     _currentTheme = "Dark",
@@ -1197,22 +1197,20 @@ end
 
 function Library:SaveConfig(name)
     if not hasFileApi() then
-        warn("[Oxide UI] SaveConfig requires an executor file API (writefile)")
         return false
     end
     ensureConfigFolder()
     local ok, encoded = pcall(function()
         return HttpService:JSONEncode(Library:GetConfig())
     end)
-    if not ok then warn("[Oxide UI] SaveConfig failed to encode config"); return false end
+    if not ok then return false end
     local wrote = pcall(writefile, configPath(name), encoded)
-    if not wrote then warn("[Oxide UI] SaveConfig failed to write file"); return false end
+    if not wrote then return false end
     return true
 end
 
 function Library:LoadConfig(name)
     if not hasFileApi() then
-        warn("[Oxide UI] LoadConfig requires an executor file API (readfile)")
         return false
     end
     local path = configPath(name)
@@ -1220,7 +1218,7 @@ function Library:LoadConfig(name)
     local ok, raw = pcall(readfile, path)
     if not ok or not raw then return false end
     local decoded, data = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not decoded then warn("[Oxide UI] LoadConfig failed to decode config"); return false end
+    if not decoded then return false end
     return Library:LoadConfigData(data)
 end
 
@@ -1540,7 +1538,7 @@ local function buildMusicPlayer(cfg)
         end
     end
     local BUILTIN_TRACKS = {
-        { name = "Oxide Anthem", id = "rbxassetid://75485931767123", startTime = 3, endTime = 115 },
+        { name = "N3 Anthem", id = "rbxassetid://75485931767123", startTime = 3, endTime = 115 },
         { name = "Lofi Chill Beats", id = "rbxassetid://9043887091" },
         { name = "Phonk Drift", id = "rbxassetid://9048375035" },
         { name = "Synthwave Glow", id = "rbxassetid://9048376510" },
@@ -1680,7 +1678,7 @@ function Library:CreateWindow(opts)
     local logoZoom       = math.clamp(tonumber(opts.LogoZoom) or (logoAsset == DEFAULT_LOGO and 2.4 or 1), 1, 6)
     local windowSize     = opts.Size or UDim2.fromOffset(700, 490)
     local windowPosition = opts.Position or UDim2.fromScale(0.5, 0.5)
-    local guiName        = opts.GuiName or "OxideUI"
+    local guiName        = opts.GuiName or "N3MoggHub"
 
     local function detectMobile()
         local platform = nil
@@ -1729,7 +1727,7 @@ function Library:CreateWindow(opts)
     local containerH = windowSize.Y.Offset + HOTBAR_GAP + HOTBAR_HEIGHT
 
     local container = make("Frame", {
-        Name = "OxideContainer",
+        Name = "N3MoggContainer",
         Size = UDim2.fromOffset(containerW, containerH),
         Position = windowPosition,
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1741,9 +1739,9 @@ function Library:CreateWindow(opts)
 
     local loadingEnabled      = opts.LoadingAnimation ~= false
     local loadingDuration     = math.clamp(tonumber(opts.LoadingDuration) or 1.2, 0.4, 8)
-    local loadingText         = tostring(opts.LoadingText or opts.Name or "Oxide")
+    local loadingText         = tostring(opts.LoadingText or opts.Name or "N3 mogg hub")
     local loadingSub          = tostring(opts.LoadingSubtitle or "HUB")
-    local loadingFooter       = tostring(opts.LoadingFooter or "Oxide HUB")
+    local loadingFooter       = tostring(opts.LoadingFooter or "N3 mogg hub")
     local overlayTransparency = math.clamp(tonumber(opts.LoadingOverlayTransparency) or 0.35, 0, 0.9)
 
     local ACC       = C.Accent
@@ -2186,8 +2184,8 @@ function Library:CreateWindow(opts)
     brandShimmerGradient:SetAttribute("ThemeGradient_Edge", "Accent")
     local logoHolder = make("Frame", { Position=UDim2.fromOffset(9,9), Size=UDim2.fromOffset(46,46), BackgroundTransparency=1, ClipsDescendants=true, Parent=brand })
     local brandLogo = make("ImageLabel",{Name="Logo",Image=logoAsset,BackgroundTransparency=1,AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),Size=UDim2.fromScale(logoZoom,logoZoom),ScaleType=Enum.ScaleType.Fit,Parent=logoHolder})
-    make("TextLabel",{Text=opts.Name or "Oxide UI",Font=Enum.Font.GothamBold,TextSize=13,TextColor3=C.White,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,16),Size=UDim2.new(1,-72,0,17),Parent=brand})
-    make("TextLabel",{Text=opts.BrandSubtitle or ("Oxide FREE..."..Library.Version),Font=Enum.Font.GothamMedium,TextSize=9,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,35),Size=UDim2.new(1,-72,0,13),Parent=brand})
+    make("TextLabel",{Text=opts.Name or "N3 mogg hub",Font=Enum.Font.GothamBold,TextSize=13,TextColor3=C.White,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,16),Size=UDim2.new(1,-72,0,17),Parent=brand})
+    make("TextLabel",{Text=opts.BrandSubtitle or ("v"..Library.Version),Font=Enum.Font.GothamMedium,TextSize=9,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,35),Size=UDim2.new(1,-72,0,13),Parent=brand})
 
     local lp = Players.LocalPlayer
     local pcard = make("Frame",{Name="PlayerCard",Position=UDim2.fromOffset(12,88),Size=UDim2.new(1,-24,0,52),BackgroundColor3=C.CardBg,Parent=sidebar})
@@ -2255,7 +2253,7 @@ function Library:CreateWindow(opts)
 
     local statusDot = make("Frame",{AnchorPoint=Vector2.new(0,0.5),Position=UDim2.new(0,16,1,-19),Size=UDim2.fromOffset(6,6),BackgroundColor3=NOTIFICATION_STYLES.success.Color,Parent=sidebar})
     circle(statusDot)
-    make("TextLabel",{Text=opts.StatusText or "Oxide is ready",Font=Enum.Font.GothamMedium,TextSize=10,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,BackgroundTransparency=1,Position=UDim2.new(0,28,1,-27),Size=UDim2.new(1,-40,0,16),Parent=sidebar})
+    make("TextLabel",{Text=opts.StatusText or "N3 mogg hub is ready",Font=Enum.Font.GothamMedium,TextSize=10,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,BackgroundTransparency=1,Position=UDim2.new(0,28,1,-27),Size=UDim2.new(1,-40,0,16),Parent=sidebar})
     local divLine=make("Frame",{Position=UDim2.fromOffset(190,0),Size=UDim2.new(0,1,1,0),BackgroundColor3=C.Accent,Parent=main})
     make("UIGradient",{Rotation=90,Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(0.5,0.5),NumberSequenceKeypoint.new(1,1)}),Parent=divLine})
     local content = make("Frame",{Position=UDim2.fromOffset(191,0),Size=UDim2.new(1,-191,1,0),BackgroundTransparency=1,Parent=main})
@@ -2809,7 +2807,7 @@ function Library:CreateWindow(opts)
     windowRef._setUIVisible = setUIVisible
     if isMobile then
         local fab = make("TextButton", {
-            Name = "OxideMobileToggle", Text = "", AutoButtonColor = false,
+            Name = "N3MoggMobileToggle", Text = "", AutoButtonColor = false,
             AnchorPoint = Vector2.new(0, 0), Position = UDim2.fromOffset(14, safeInset.Y + 14),
             Size = UDim2.fromOffset(46, 46), BackgroundColor3 = C.CardBg,
             ZIndex = 60, Parent = screenGui,
@@ -3676,4 +3674,5 @@ function SubTab:AddComponents(list)
     end
     return handles
 end
+
 return Library
