@@ -1,5 +1,5 @@
 -- N3 mogg hub — MM2 script
--- Tabs: MM2 (no Rage, no Teleport), Others (soon...), Settings
+-- Tabs: MM2 (no Rage, no Teleport), Others (with ??? key), Settings
 
 local Library = _G.N3MoggLibrary
 if not Library then
@@ -557,8 +557,7 @@ task.spawn(function()
         end
         return best
     end
-    while not HUB.dead do
-        if autoCollect then
+    while not HUB.dead do        if autoCollect then
             pcall(function()
                 local coin = getNearestCoin()
                 local hrp = GetHRP()
@@ -665,11 +664,37 @@ SysSub:AddButton({ Name = "Server Hop", Callback = function()
 end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- TAB: OTHERS
+-- TAB: OTHERS (with ??? key)
 -- ════════════════════════════════════════════════════════════════════════════
 local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "More games soon", Icon = "grid" })
-local OthersSub = OthersTab:AddSubTab("Coming Soon")
-OthersSub:AddParagraph({ Title = "soon...", Text = "Other games will be added here later." })
+
+-- Подвкладка "???"
+local MysterySub = OthersTab:AddSubTab("???")
+
+MysterySub:AddSection("???")
+local mysteryKey = MysterySub:AddInput({
+    Name = "???", Placeholder = "???", Default = "", Flag = "mystery_key_input",
+    Callback = function() end,
+})
+
+MysterySub:AddButton({
+    Name = "???", Primary = true,
+    Callback = function()
+        local entered = ""
+        pcall(function() entered = tostring(mysteryKey:Get() or "") end)
+        entered = entered:lower():gsub("%s", "")
+        if entered == "mogged" then
+            Notify("???", "Access granted.", "Success", 3)
+            -- Здесь можно добавить разблокировку доп. функций в будущем
+        else
+            Notify("???", "Invalid key.", "Error", 3)
+        end
+    end,
+})
+
+-- Подвкладка "Coming Soon"
+local OthersSoon = OthersTab:AddSubTab("Coming Soon")
+OthersSoon:AddParagraph({ Title = "soon...", Text = "Other games will be added here later." })
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: SETTINGS
