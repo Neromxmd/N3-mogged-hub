@@ -1,5 +1,5 @@
 -- N3 mogg hub — MM2 script
--- Tabs: MM2 (Player, Visual, Gameplay, System), Others (Unlock, Aim, ESP), Settings
+-- Tabs: MM2 (Player, Visual, Gameplay, System), Others (Aim, ESP), Settings
 
 local Library = _G.N3MoggLibrary
 if not Library then
@@ -21,9 +21,6 @@ local Camera      = Workspace.CurrentCamera
 local HUB = { conns = {}, drawings = {}, highlights = {}, dead = false }
 local function track(c) table.insert(HUB.conns, c); return c end
 local function trackDrawing(d) if d then table.insert(HUB.drawings, d) end; return d end
-
-local SECRET_KEY = "mogged"
-local secretUnlocked = false
 
 local Window = Library:CreateWindow({
     Name = "N3 mogg hub",
@@ -67,8 +64,11 @@ local function GetLevel()
     return 0
 end
 
--- ROLE TRACKER
+-- ════════════════════════════════════════════════════════════════════════════
+-- ROLE TRACKER (мгновенный, читает атрибуты Role)
+-- ════════════════════════════════════════════════════════════════════════════
 local roleMemory = {}
+
 local ROLE_ATTR_NAMES = { "Role", "role", "ROLE", "Team", "team" }
 local ROLE_VALUES = {
     ["murderer"] = "Murderer",
@@ -109,6 +109,7 @@ end
 
 local function GetRole(plr)
     if plr == nil then plr = LocalPlayer end
+
     local r = ReadRoleAttr(plr)
     if r then roleMemory[plr] = r; return r end
 
@@ -122,11 +123,13 @@ local function GetRole(plr)
             roleMemory[plr] = "Dead"
             return "Dead"
         end
+
         for _, t in ipairs(char:GetChildren()) do
             r = isToolRole(t)
             if r then roleMemory[plr] = r; return r end
         end
     end
+
     local bp = plr:FindFirstChild("Backpack")
     if bp then
         for _, t in ipairs(bp:GetChildren()) do
@@ -134,6 +137,7 @@ local function GetRole(plr)
             if r then roleMemory[plr] = r; return r end
         end
     end
+
     if roleMemory[plr] then return roleMemory[plr] end
     return "Unknown"
 end
@@ -162,7 +166,7 @@ local function FormatMoney(v) return tostring(math.floor(tonumber(v) or 0)) end
 -- ════════════════════════════════════════════════════════════════════════════
 local MM2Tab = Window:AddTab({ Name = "MM2", Subtitle = "Murder Mystery 2", Icon = "combat" })
 
--- PLAYER
+-- ── PLAYER ──
 local PlayerSub = MM2Tab:AddSubTab("Player")
 PlayerSub:AddSection("Speed & Jump")
 local wsEnabled, wsValue = false, 16
@@ -296,10 +300,21 @@ local VisualSub = MM2Tab:AddSubTab("Visual")
 local hasDrawing = (typeof(Drawing) == "table") or (Drawing ~= nil and pcall(function() return Drawing.new end))
 
 local esp = {
-    enabled = true, players = true, box = false, boxStyle = "Corner", boxThickness = 1,
-    name = true, distance = false, health = false, chams = true, tracer = false,
-    roleESP = true, coinESP = false, maxDistance = 1000, textSize = 14,
-    coinColor = Color3.fromRGB(255, 220, 60),
+    enabled      = true,
+    players      = true,
+    box          = false,
+    boxStyle     = "Corner",
+    boxThickness = 1,
+    name         = true,
+    distance     = false,
+    health       = false,
+    chams        = true,
+    tracer       = false,
+    roleESP      = true,
+    coinESP      = false,
+    maxDistance  = 1000,
+    textSize     = 14,
+    coinColor    = Color3.fromRGB(255, 220, 60),
 }
 local playerObjects = {}
 
@@ -367,7 +382,7 @@ track(Players.PlayerRemoving:Connect(RemovePlayerESP))
 VisualSub:AddSection("ESP")
 VisualSub:AddToggle({ Name = "Master Enable", Default = true, Flag = "esp_enabled", Callback = function(v) esp.enabled = v end })
 VisualSub:AddToggle({ Name = "Players", Default = true, Flag = "esp_players", Callback = function(v) esp.players = v end })
-VisualSub:AddToggle({ Name = "Role ESP", Default = true, Flag = "esp_role", Callback = function(v) esp.roleESP = v end })
+VisualSub:AddToggle({ Name = "Role ESP (color by role)", Default = true, Flag = "esp_role", Callback = function(v) esp.roleESP = v end })
 VisualSub:AddToggle({ Name = "Name", Default = true, Flag = "esp_name", Callback = function(v) esp.name = v end })
 VisualSub:AddToggle({ Name = "Chams (Highlight)", Default = true, Flag = "esp_chams", Callback = function(v) esp.chams = v end })
 VisualSub:AddToggle({ Name = "Coin ESP", Default = false, Flag = "esp_coin", Callback = function(v) esp.coinESP = v end })
@@ -393,9 +408,11 @@ local function getBox2D(char)
     if not hrp then return nil end
     local topPos = head and head.Position or (hrp.Position + Vector3.new(0, 1.5, 0))
     local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
+
     local topScreen, topOn = Camera:WorldToViewportPoint(topPos)
     local botScreen, botOn = Camera:WorldToViewportPoint(bottomPos)
     if not topOn or not botOn or topScreen.Z <= 0 then return nil end
+
     local h = math.abs(botScreen.Y - topScreen.Y)
     if h < 8 then h = 8 end
     local w = h * 0.5
@@ -406,6 +423,7 @@ end
 local roleCache = {}
 local roleCacheTime = 0
 local ROLE_CACHE_TTL = 0.05
+
 local function refreshRoleCache()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
@@ -417,9 +435,12 @@ end
 
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
-    if tick() - roleCacheTime > ROLE_CACHE_TTL then refreshRoleCache() end
+    if tick() - roleCacheTime > ROLE_CACHE_TTL then
+        refreshRoleCache()
+    end
     local hrp = GetHRP()
     local myPos = hrp and hrp.Position or Vector3.zero
+
     for p, obj in pairs(playerObjects) do
         local visible = esp.enabled and esp.players
         local char = p.Character
@@ -429,6 +450,7 @@ track(RunService.RenderStepped:Connect(function()
             local dist = (hrp2.Position - myPos).Magnitude
             local roleName = roleCache[p] or GetRole(p)
             local color = esp.roleESP and RoleColor(roleName) or Color3.fromRGB(255, 255, 255)
+
             if esp.maxDistance > 0 and dist > esp.maxDistance then
                 if obj.frame then obj.frame.Visible = false end
                 if obj.outline then obj.outline.Visible = false end
@@ -447,6 +469,7 @@ track(RunService.RenderStepped:Connect(function()
                     obj.highlight.OutlineColor = color
                     obj.highlight.Enabled = (esp.chams or esp.roleESP)
                 end
+
                 if esp.name and obj.name then
                     local headPart = char:FindFirstChild("Head")
                     local headPos = (headPart and headPart.Position or hrp2.Position) + Vector3.new(0, 1.2, 0)
@@ -463,12 +486,14 @@ track(RunService.RenderStepped:Connect(function()
                 else
                     if obj.name then obj.name.Visible = false end
                 end
+
                 local leftX, topY, rightX, bottomY = getBox2D(char)
                 if leftX then
                     local w = rightX - leftX
                     local h = bottomY - topY
                     local cx = (leftX + rightX) / 2
                     local cornerLen = math.clamp(w * 0.28, 4, 18)
+
                     if esp.box and hasDrawing then
                         if esp.boxStyle == "Corner" then
                             if obj.frame then obj.frame.Visible = false end
@@ -508,18 +533,25 @@ track(RunService.RenderStepped:Connect(function()
                         if obj.outline then obj.outline.Visible = false end
                         if obj.corners then for _, l in ipairs(obj.corners) do if l then l.Visible = false end end end
                     end
+
                     if esp.distance and obj.dist then
                         obj.dist.Visible = true
                         obj.dist.Text = string.format("%.0fm", dist / 3)
                         obj.dist.Size = math.max(9, esp.textSize - 2)
                         obj.dist.Position = Vector2.new(cx, bottomY + 4)
-                    else if obj.dist then obj.dist.Visible = false end end
+                    else
+                        if obj.dist then obj.dist.Visible = false end
+                    end
+
                     if esp.tracer and obj.tracer then
                         obj.tracer.Visible = true; obj.tracer.Color = color
                         local vs = Camera.ViewportSize
                         obj.tracer.From = Vector2.new(vs.X / 2, vs.Y - 4)
                         obj.tracer.To = Vector2.new(cx, bottomY)
-                    else if obj.tracer then obj.tracer.Visible = false end end
+                    else
+                        if obj.tracer then obj.tracer.Visible = false end
+                    end
+
                     local humHealth = hum2.Health
                     local humMax = hum2.MaxHealth
                     local healthFrac = math.clamp(humHealth / math.max(humMax, 1), 0, 1)
@@ -610,4 +642,373 @@ VisualSub:AddToggle({ Name = "Fullbright", Default = false, Flag = "fullbright",
         end
     end })
 local defaultFOV = Camera.FieldOfView
-VisualSub:AddSlider({ Name = "Field of View
+VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
+    Callback = function(v) Camera.FieldOfView = v end })
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- GAMEPLAY
+-- ════════════════════════════════════════════════════════════════════════════
+local GameplaySub = MM2Tab:AddSubTab("Gameplay")
+GameplaySub:AddSection("Auto Farm Coins")
+local autoCollect = false
+local autoCollectSpeed = 0.8
+
+GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
+    Callback = function(v) autoCollect = v; Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error") end })
+GameplaySub:AddSlider({ Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
+    Callback = function(v) autoCollectSpeed = v end })
+
+task.spawn(function()
+    local function getNearestCoin()
+        local hrp = GetHRP(); if not hrp then return nil end
+        local best, bestDist = nil, math.huge
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart") and v.Transparency < 1 and v.Parent and (v.Name == "Coin" or v.Name:lower():find("coin")) then
+                local ok, d = pcall(function() return (v.Position - hrp.Position).Magnitude end)
+                if ok and d < bestDist and d <= 250 then best = v; bestDist = d end
+            end
+        end
+        return best
+    end
+    while not HUB.dead do
+        if autoCollect then
+            pcall(function()
+                local coin = getNearestCoin()
+                local hrp = GetHRP()
+                if coin and hrp then
+                    local dist = (coin.Position - hrp.Position).Magnitude
+                    if dist < 10 then
+                        if firetouchinterest then pcall(function() firetouchinterest(hrp, coin, 0); firetouchinterest(hrp, coin, 1) end) end
+                        pcall(function() hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)) end)
+                        task.wait(0.15)
+                    else
+                        local TweenService = game:GetService("TweenService")
+                        local tw = TweenService:Create(hrp, TweenInfo.new(math.clamp(dist / 100, 0.22, 0.9), Enum.EasingStyle.Linear), { CFrame = CFrame.new(coin.Position + Vector3.new(0, 2.5, 0)) })
+                        tw:Play(); tw.Completed:Wait()
+                    end
+                end
+            end)
+        end
+        task.wait(autoCollect and autoCollectSpeed or 0.5)
+    end
+end)
+
+GameplaySub:AddSection("Hitbox Expander")
+local hitboxEnabled, hitboxSize = false, 4
+local hitboxConn
+local originalSizes = {}
+local function applyHitbox(enable)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and hrp:IsA("BasePart") then
+                if enable then
+                    if not originalSizes[hrp] then originalSizes[hrp] = hrp.Size end
+                    pcall(function()
+                        hrp.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                        hrp.Transparency = 0.6; hrp.CanCollide = false; hrp.Massless = true
+                    end)
+                else
+                    local orig = originalSizes[hrp]
+                    if orig then pcall(function() hrp.Size = orig; hrp.Transparency = 1 end) end
+                    originalSizes[hrp] = nil
+                end
+            end
+        end
+    end
+end
+local function startHitboxLoop()
+    if hitboxConn then hitboxConn:Disconnect() end
+    hitboxConn = RunService.Heartbeat:Connect(function()
+        if HUB.dead or not hitboxEnabled then return end
+        applyHitbox(true)
+    end)
+    table.insert(HUB.conns, hitboxConn)
+end
+local function stopHitboxLoop()
+    if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
+    for part, orig in pairs(originalSizes) do
+        if part and part.Parent then pcall(function() part.Size = orig; part.Transparency = 1 end) end
+    end
+    table.clear(originalSizes)
+end
+GameplaySub:AddToggle({ Name = "Expand Hitbox", Default = false, Flag = "rage_hitbox",
+    Callback = function(v) hitboxEnabled = v; if v then startHitboxLoop() else stopHitboxLoop() end end })
+GameplaySub:AddSlider({ Name = "Hitbox Size", Min = 2, Max = 12, Default = 4, Flag = "rage_hitboxsize",
+    Callback = function(v) hitboxSize = v; if hitboxEnabled then applyHitbox(true) end end })
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- SYSTEM
+-- ════════════════════════════════════════════════════════════════════════════
+local SysSub = MM2Tab:AddSubTab("System")
+SysSub:AddSection("Balance")
+local moneyLabel = SysSub:AddParagraph({ Title = "Balance", Text = ("Coins: %s\nLevel: %d\nRole: %s"):format(FormatMoney(GetCoins()), GetLevel(), GetRole()) })
+task.spawn(function()
+    while not HUB.dead do
+        pcall(function() moneyLabel:Set(("Coins: %s\nLevel: %d\nRole: %s"):format(FormatMoney(GetCoins()), GetLevel(), GetRole())) end)
+        task.wait(2)
+    end
+end)
+SysSub:AddSection("Server")
+SysSub:AddButton({ Name = "Rejoin Server", Primary = true, Callback = function()
+    Notify("Server", "Rejoining...", "Info")
+    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+end })
+SysSub:AddButton({ Name = "Server Hop", Callback = function()
+    Notify("Server", "Finding a new server...", "Info")
+    task.spawn(function()
+        local ok, err = pcall(function()
+            local HttpService = game:GetService("HttpService")
+            local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId)
+            local raw
+            local ok2, res = pcall(function() return game:HttpGet(url) end)
+            if ok2 and type(res) == "string" and #res > 10 then raw = res
+            elseif typeof(request) == "function" then
+                local r = request({Url = url, Method = "GET"})
+                if r and r.Body and r.StatusCode == 200 then raw = r.Body else error("request failed") end
+            else error("no http method") end
+            local data = HttpService:JSONDecode(raw)
+            for _, s in ipairs(data.data or {}) do
+                if type(s.playing) == "number" and s.playing < s.maxPlayers and s.id ~= game.JobId then
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer); return
+                end
+            end
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
+        if not ok then Notify("Server", "Hop failed: " .. tostring(err), "Error", 4) end
+    end)
+end })
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- TAB: OTHERS
+-- ════════════════════════════════════════════════════════════════════════════
+local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "Extra functions", Icon = "grid" })
+
+-- ── Others → Aim ──
+local OthersAim = OthersTab:AddSubTab("Aim")
+
+local aimCfg = {
+    enabled    = false,
+    fov        = 120,
+    targetPart = "Head",
+    key        = Enum.UserInputType.MouseButton2,
+    teamCheck  = false,
+}
+local aimFovCircle = nil
+
+if hasDrawing then
+    local ok, c = pcall(function() return Drawing.new("Circle") end)
+    if ok and c then
+        c.Thickness = 1.5
+        c.NumSides = 64
+        c.Radius = aimCfg.fov
+        c.Filled = false
+        c.Visible = false
+        c.Color = Color3.fromRGB(255, 255, 255)
+        c.Transparency = 0.6
+        aimFovCircle = trackDrawing(c)
+    end
+end
+
+OthersAim:AddSection("Aim Assist")
+OthersAim:AddToggle({
+    Name = "Aim Assist", Default = false, Flag = "others_aim_enabled",
+    Description = "Наводит камеру на ближайшего игрока при зажатой клавише",
+    Callback = function(v) aimCfg.enabled = v end,
+})
+OthersAim:AddSlider({
+    Name = "FOV Radius", Min = 30, Max = 500, Default = 120, Suffix = "px", Flag = "others_aim_fov",
+    Callback = function(v) aimCfg.fov = v; if aimFovCircle then aimFovCircle.Radius = v end end,
+})
+OthersAim:AddDropdown({
+    Name = "Target Part", Options = { "Head", "HumanoidRootPart", "UpperTorso" },
+    Default = "Head", Flag = "others_aim_part",
+    Callback = function(v) aimCfg.targetPart = v end,
+})
+OthersAim:AddDropdown({
+    Name = "Aim Key", Options = { "Right Mouse", "Left Mouse", "E", "Q", "Shift" },
+    Default = "Right Mouse", Flag = "others_aim_key",
+    Callback = function(v)
+        if v == "Right Mouse" then aimCfg.key = Enum.UserInputType.MouseButton2
+        elseif v == "Left Mouse" then aimCfg.key = Enum.UserInputType.MouseButton1
+        elseif v == "E" then aimCfg.key = Enum.KeyCode.E
+        elseif v == "Q" then aimCfg.key = Enum.KeyCode.Q
+        elseif v == "Shift" then aimCfg.key = Enum.KeyCode.LeftShift
+        end
+    end,
+})
+OthersAim:AddToggle({
+    Name = "Team Check", Default = false, Flag = "others_aim_teamcheck",
+    Description = "Игнорировать игроков из своей команды",
+    Callback = function(v) aimCfg.teamCheck = v end,
+})
+
+local function isAimKeyDown(key)
+    if typeof(key) == "EnumItem" then
+        if key.EnumType == Enum.UserInputType then
+            return UserInputService:IsMouseButtonPressed(key)
+        elseif key.EnumType == Enum.KeyCode then
+            return UserInputService:IsKeyDown(key)
+        end
+    end
+    return false
+end
+
+track(RunService.RenderStepped:Connect(function()
+    if HUB.dead then return end
+    if aimFovCircle then
+        aimFovCircle.Visible = aimCfg.enabled
+        aimFovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    end
+    if not aimCfg.enabled then return end
+    if not isAimKeyDown(aimCfg.key) then return end
+
+    local closest, bestDist = nil, aimCfg.fov
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            if aimCfg.teamCheck and plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team then
+                -- skip
+            else
+                local part = plr.Character:FindFirstChild(aimCfg.targetPart)
+                    or plr.Character:FindFirstChild("Head")
+                    or plr.Character:FindFirstChild("HumanoidRootPart")
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                if part and hum and hum.Health > 0 then
+                    local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen and pos.Z > 0 then
+                        local screenPos = Vector2.new(pos.X, pos.Y)
+                        local mousePos = UserInputService:GetMouseLocation()
+                        local d = (screenPos - mousePos).Magnitude
+                        if d < bestDist then
+                            bestDist = d
+                            closest = part
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if closest then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
+    end
+end))
+
+-- ── Others → ESP ──
+local OthersESP = OthersTab:AddSubTab("ESP")
+
+local simpleEspCfg = {
+    enabled  = false,
+    color    = Color3.fromRGB(255, 255, 255),
+    textSize = 14,
+}
+local simpleEspList = {}
+
+local function makeSimpleEspText()
+    if not hasDrawing then return nil end
+    local ok, d = pcall(function() return Drawing.new("Text") end)
+    if not ok or not d then return nil end
+    d.Size = simpleEspCfg.textSize
+    d.Center = true
+    d.Outline = true
+    d.Font = 2
+    d.Color = simpleEspCfg.color
+    d.Visible = false
+    return trackDrawing(d)
+end
+
+local function addSimpleEsp(p)
+    if p == LocalPlayer or simpleEspList[p] then return end
+    simpleEspList[p] = makeSimpleEspText()
+end
+local function removeSimpleEsp(p)
+    if simpleEspList[p] then
+        pcall(function() simpleEspList[p]:Remove() end)
+        simpleEspList[p] = nil
+    end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do addSimpleEsp(p) end
+track(Players.PlayerAdded:Connect(addSimpleEsp))
+track(Players.PlayerRemoving:Connect(removeSimpleEsp))
+
+track(RunService.RenderStepped:Connect(function()
+    if HUB.dead then return end
+    for p, d in pairs(simpleEspList) do
+        if d then
+            local char = p.Character
+            local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if simpleEspCfg.enabled and head and hum and hum.Health > 0 then
+                local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.2, 0))
+                if onScreen and pos.Z > 0 then
+                    d.Text = p.Name
+                    d.Position = Vector2.new(pos.X, pos.Y)
+                    d.Visible = true
+                else
+                    d.Visible = false
+                end
+            else
+                d.Visible = false
+            end
+        end
+    end
+end))
+
+OthersESP:AddSection("Simple ESP")
+OthersESP:AddToggle({
+    Name = "Simple ESP", Default = false, Flag = "others_esp_enabled",
+    Description = "Простой ESP — ник над головой",
+    Callback = function(v) simpleEspCfg.enabled = v end,
+})
+OthersESP:AddColorPicker({
+    Name = "ESP Color", Default = Color3.fromRGB(255, 255, 255), Flag = "others_esp_color",
+    Callback = function(c)
+        simpleEspCfg.color = c
+        for _, d in pairs(simpleEspList) do
+            if d then pcall(function() d.Color = c end) end
+        end
+    end,
+})
+OthersESP:AddSlider({
+    Name = "Text Size", Min = 10, Max = 24, Default = 14, Flag = "others_esp_textsize",
+    Callback = function(v)
+        simpleEspCfg.textSize = v
+        for _, d in pairs(simpleEspList) do
+            if d then pcall(function() d.Size = v end) end
+        end
+    end,
+})
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- TAB: SETTINGS
+-- ════════════════════════════════════════════════════════════════════════════
+local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Themes & server", Icon = "settings" })
+local SettingsSub = SettingsTab:AddSubTab("Themes")
+
+SettingsSub:AddSection("Theme")
+SettingsSub:AddDropdown({
+    Name = "Theme", Options = { "Dark", "Light", "OLED" }, Default = "Dark", Flag = "ui_theme",
+    Callback = function(v) pcall(function() Library:SetTheme(v) end) end,
+})
+
+SettingsSub:AddSection("Hub Keybind")
+SettingsSub:AddKeybind({
+    Name = "Toggle Hub Key", Default = Enum.KeyCode.RightShift, Flag = "hub_toggle_key",
+    Description = "Press to show/hide the hub",
+    OnPress = function() Window:ToggleUI() end,
+})
+
+SettingsSub:AddSection("Server")
+SettingsSub:AddButton({
+    Name = "Rejoin to Server", Primary = true,
+    Callback = function()
+        Notify("Server", "Rejoining...", "Info")
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end,
+})
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- BOOT
+-- ════════════════════════════════════════════════════════════════════════════
+Notify("N3 mogg hub", "Loaded — Coins: " .. tostring(GetCoins()) .. " | Role: " .. GetRole(), "Success", 3)
