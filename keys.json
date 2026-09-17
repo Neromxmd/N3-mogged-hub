@@ -1,0 +1,14 @@
+{
+  "N3TrueAdam-MASTER": {
+    "hwid": "",
+    "expires": "2030-01-01",
+    "active": true,
+    "note": "главный ключ"
+  },
+  "vip-key-001": {
+    "hwid": "",
+    "expires": "2026-12-31",
+    "active": true,
+    "note": "другой ключ"
+  }
+}
