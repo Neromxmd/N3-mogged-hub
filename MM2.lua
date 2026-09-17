@@ -1,5 +1,5 @@
 -- N3 mogg hub — MM2 script
--- Tabs: MM2, Others, Settings (with keybind)
+-- Tabs: MM2 (no Rage), Others (soon...), Settings (themes + keybind + rejoin)
 
 local Library = _G.N3MoggLibrary
 if not Library then
@@ -24,10 +24,13 @@ local function trackDrawing(d) if d then table.insert(HUB.drawings, d) end; retu
 
 local Window = Library:CreateWindow({
     Name = "N3 mogg hub",
+    Logo = "rbxassetid://120464926691610",
     BrandSubtitle = "MM2",
-    StatusText = "N3 mogg hub ready",
+    StatusText = "N3 mogg hub is ready",
     LoadingAnimation = true,
     LoadingText = "N3 mogg hub",
+    LoadingSubtitle = "HUB",
+    LoadingFooter = "N3 mogg hub",
     LoadingDuration = 1.5,
 })
 
@@ -98,33 +101,49 @@ local function FormatMoney(v) return tostring(math.floor(tonumber(v) or 0)) end
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: MM2
 -- ════════════════════════════════════════════════════════════════════════════
-local MM2Tab = Window:AddTab({ Name = "MM2", Subtitle = "Murder Mystery 2" })
+local MM2Tab = Window:AddTab({ Name = "MM2", Subtitle = "Murder Mystery 2", Icon = "combat" })
 
--- ── PLAYER ──
+-- ── PLAYER ──────────────────────────────────────────────────────────────
 local PlayerSub = MM2Tab:AddSubTab("Player")
+
 PlayerSub:AddSection("Speed & Jump")
 local wsEnabled, wsValue = false, 16
 local jpEnabled, jpValue = false, 50
 local infJump = false
 local defaultGravity = Workspace.Gravity
 
-PlayerSub:AddToggle({ Name = "WalkSpeed", Default = false, Flag = "ws_enabled",
-    Callback = function(v) wsEnabled = v; local h = GetHumanoid(); if h then h.WalkSpeed = v and wsValue or 16 end end })
-PlayerSub:AddSlider({ Name = "WalkSpeed Value", Min = 16, Max = 500, Default = 16, Flag = "ws_value",
-    Callback = function(v) wsValue = v; if wsEnabled then local h = GetHumanoid(); if h then h.WalkSpeed = v end end end })
-PlayerSub:AddToggle({ Name = "JumpPower", Default = false, Flag = "jp_enabled",
-    Callback = function(v) jpEnabled = v; local h = GetHumanoid(); if h then h.UseJumpPower = true; h.JumpPower = v and jpValue or 50 end end })
-PlayerSub:AddSlider({ Name = "JumpPower Value", Min = 50, Max = 400, Default = 50, Flag = "jp_value",
-    Callback = function(v) jpValue = v; if jpEnabled then local h = GetHumanoid(); if h then h.UseJumpPower = true; h.JumpPower = v end end end })
-PlayerSub:AddToggle({ Name = "Infinite Jump", Default = false, Flag = "inf_jump",
-    Callback = function(v) infJump = v end })
+PlayerSub:AddToggle({
+    Name = "WalkSpeed", Default = false, Flag = "ws_enabled",
+    Description = "Re-applied every frame",
+    Callback = function(v) wsEnabled = v; local h = GetHumanoid(); if h then h.WalkSpeed = v and wsValue or 16 end end,
+})
+PlayerSub:AddSlider({
+    Name = "WalkSpeed Value", Min = 16, Max = 500, Default = 16, Flag = "ws_value",
+    Callback = function(v) wsValue = v; if wsEnabled then local h = GetHumanoid(); if h then h.WalkSpeed = v end end end,
+})
+PlayerSub:AddToggle({
+    Name = "JumpPower", Default = false, Flag = "jp_enabled",
+    Callback = function(v) jpEnabled = v; local h = GetHumanoid(); if h then h.UseJumpPower = true; h.JumpPower = v and jpValue or 50 end end,
+})
+PlayerSub:AddSlider({
+    Name = "JumpPower Value", Min = 50, Max = 400, Default = 50, Flag = "jp_value",
+    Callback = function(v) jpValue = v; if jpEnabled then local h = GetHumanoid(); if h then h.UseJumpPower = true; h.JumpPower = v end end end,
+})
+PlayerSub:AddToggle({
+    Name = "Infinite Jump", Default = false, Flag = "inf_jump",
+    Callback = function(v) infJump = v end,
+})
 
 PlayerSub:AddSection("Gravity")
 local gravityEnabled, gravityValue = false, defaultGravity
-PlayerSub:AddToggle({ Name = "Custom Gravity", Default = false, Flag = "grav_enabled",
-    Callback = function(v) gravityEnabled = v; Workspace.Gravity = v and gravityValue or defaultGravity end })
-PlayerSub:AddSlider({ Name = "Gravity Value", Min = 0, Max = 400, Default = math.floor(defaultGravity), Flag = "grav_value",
-    Callback = function(v) gravityValue = v; if gravityEnabled then Workspace.Gravity = v end end })
+PlayerSub:AddToggle({
+    Name = "Custom Gravity", Default = false, Flag = "grav_enabled",
+    Callback = function(v) gravityEnabled = v; Workspace.Gravity = v and gravityValue or defaultGravity end,
+})
+PlayerSub:AddSlider({
+    Name = "Gravity Value", Min = 0, Max = 400, Default = math.floor(defaultGravity), Flag = "grav_value",
+    Callback = function(v) gravityValue = v; if gravityEnabled then Workspace.Gravity = v end end,
+})
 
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
@@ -179,14 +198,19 @@ local function stopFly()
     local root = GetHRP()
     if root then root.AssemblyLinearVelocity = Vector3.zero end
 end
-PlayerSub:AddToggle({ Name = "Fly", Default = false, Flag = "fly_enabled",
-    Callback = function(v) flying = v; if v then startFly() else stopFly() end end })
-PlayerSub:AddSlider({ Name = "Fly Speed", Min = 10, Max = 500, Default = 50, Flag = "fly_speed",
-    Callback = function(v) flySpeed = v end })
+PlayerSub:AddToggle({
+    Name = "Fly", Default = false, Flag = "fly_enabled",
+    Callback = function(v) flying = v; if v then startFly() else stopFly() end end,
+})
+PlayerSub:AddSlider({
+    Name = "Fly Speed", Min = 10, Max = 500, Default = 50, Flag = "fly_speed",
+    Callback = function(v) flySpeed = v end,
+})
 
 local noclip = false
 local noclipConn
-PlayerSub:AddToggle({ Name = "Noclip", Default = false, Flag = "noclip_enabled",
+PlayerSub:AddToggle({
+    Name = "Noclip", Default = false, Flag = "noclip_enabled",
     Callback = function(v)
         noclip = v
         if v then
@@ -201,7 +225,8 @@ PlayerSub:AddToggle({ Name = "Noclip", Default = false, Flag = "noclip_enabled",
         else
             if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
         end
-    end })
+    end,
+})
 
 PlayerSub:AddSection("Character")
 PlayerSub:AddButton({ Name = "Respawn", Primary = true, Callback = function()
@@ -214,8 +239,10 @@ PlayerSub:AddButton({ Name = "Reset Stats", Callback = function()
 end })
 
 local antiAFK = true
-PlayerSub:AddToggle({ Name = "Anti-AFK", Default = true, Flag = "anti_afk",
-    Callback = function(v) antiAFK = v end })
+PlayerSub:AddToggle({
+    Name = "Anti-AFK", Default = true, Flag = "anti_afk",
+    Callback = function(v) antiAFK = v end,
+})
 if not _G.N3MoggAntiAFK then
     _G.N3MoggAntiAFK = true
     LocalPlayer.Idled:Connect(function()
@@ -227,7 +254,7 @@ if not _G.N3MoggAntiAFK then
     end)
 end
 
--- ── TELEPORT ──
+-- ── TELEPORT ────────────────────────────────────────────────────────────
 local TpSub = MM2Tab:AddSubTab("Teleport")
 TpSub:AddSection("Players")
 local selectedPlayer = nil
@@ -250,9 +277,13 @@ local function ResolvePlayer(name)
     return nil
 end
 
-playerDropdown = TpSub:AddDropdown({ Name = "Player", Options = GetPlayerNames(), Flag = "tp_player",
-    Callback = function(v) selectedPlayer = v end })
-TpSub:AddButton({ Name = "Refresh Players", Callback = function() playerDropdown:SetOptions(GetPlayerNames()) end })
+playerDropdown = TpSub:AddDropdown({
+    Name = "Player", Options = GetPlayerNames(), Default = nil, Flag = "tp_player",
+    Callback = function(v) selectedPlayer = v end,
+})
+TpSub:AddButton({ Name = "Refresh Players", Callback = function()
+    playerDropdown:SetOptions(GetPlayerNames())
+end })
 TpSub:AddButton({ Name = "Teleport To Player", Primary = true, Callback = function()
     local target = ResolvePlayer(selectedPlayer)
     local myHRP = GetHRP()
@@ -288,8 +319,10 @@ TpSub:AddButton({ Name = "Save Current Position", Primary = true, Callback = fun
     if waypointDropdown then waypointDropdown:SetOptions(WaypointNames()) end
     Notify("Waypoints", "Saved '" .. pendingName .. "'", "Success")
 end })
-waypointDropdown = TpSub:AddDropdown({ Name = "Saved Waypoints", Options = WaypointNames(), Flag = "wp_selected",
-    Callback = function(v) selectedWaypoint = v end })
+waypointDropdown = TpSub:AddDropdown({
+    Name = "Saved Waypoints", Options = WaypointNames(), Default = nil, Flag = "wp_selected",
+    Callback = function(v) selectedWaypoint = v end,
+})
 TpSub:AddButton({ Name = "Teleport To Waypoint", Primary = true, Callback = function()
     local cf = waypoints[selectedWaypoint]
     local hrp = GetHRP()
@@ -316,8 +349,10 @@ local spotNames = {}
 for n in pairs(spots) do table.insert(spotNames, n) end
 table.sort(spotNames)
 local selectedSpot = spotNames[1]
-TpSub:AddDropdown({ Name = "Location", Options = spotNames, Default = selectedSpot, Flag = "tp_spot",
-    Callback = function(v) selectedSpot = v end })
+TpSub:AddDropdown({
+    Name = "Location", Options = spotNames, Default = selectedSpot, Flag = "tp_spot",
+    Callback = function(v) selectedSpot = v end,
+})
 TpSub:AddButton({ Name = "Teleport To Location", Primary = true, Callback = function()
     local cf = spots[selectedSpot]
     local hrp = GetHRP()
@@ -325,7 +360,7 @@ TpSub:AddButton({ Name = "Teleport To Location", Primary = true, Callback = func
     else Notify("Teleport", "Unavailable", "Error") end
 end })
 
--- ── VISUAL ──
+-- ── VISUAL ──────────────────────────────────────────────────────────────
 local VisualSub = MM2Tab:AddSubTab("Visual")
 local hasDrawing = (typeof(Drawing) == "table") or (Drawing ~= nil and pcall(function() return Drawing.new end))
 
@@ -616,7 +651,8 @@ end)
 VisualSub:AddSection("World")
 local fullbright = false
 local savedLighting = { Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime, FogEnd = Lighting.FogEnd, GlobalShadows = Lighting.GlobalShadows, Ambient = Lighting.Ambient }
-VisualSub:AddToggle({ Name = "Fullbright", Default = false, Flag = "fullbright",
+VisualSub:AddToggle({
+    Name = "Fullbright", Default = false, Flag = "fullbright",
     Callback = function(v)
         fullbright = v
         if v then
@@ -627,21 +663,29 @@ VisualSub:AddToggle({ Name = "Fullbright", Default = false, Flag = "fullbright",
             Lighting.FogEnd = savedLighting.FogEnd; Lighting.GlobalShadows = savedLighting.GlobalShadows
             Lighting.Ambient = savedLighting.Ambient
         end
-    end })
+    end,
+})
 local defaultFOV = Camera.FieldOfView
-VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
-    Callback = function(v) Camera.FieldOfView = v end })
+VisualSub:AddSlider({
+    Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
+    Callback = function(v) Camera.FieldOfView = v end,
+})
 
--- ── GAMEPLAY ──
+-- ── GAMEPLAY ────────────────────────────────────────────────────────────
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
 local autoCollect = false
 local autoCollectSpeed = 0.8
 
-GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
-    Callback = function(v) autoCollect = v; Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error") end })
-GameplaySub:AddSlider({ Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
-    Callback = function(v) autoCollectSpeed = v end })
+GameplaySub:AddToggle({
+    Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
+    Description = "Flies to nearest coin and collects it",
+    Callback = function(v) autoCollect = v; Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error") end,
+})
+GameplaySub:AddSlider({
+    Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
+    Callback = function(v) autoCollectSpeed = v end,
+})
 
 task.spawn(function()
     local function getNearestCoin()
@@ -717,148 +761,16 @@ local function stopHitboxLoop()
     end
     table.clear(originalSizes)
 end
-GameplaySub:AddToggle({ Name = "Expand Hitbox", Default = false, Flag = "rage_hitbox",
-    Callback = function(v) hitboxEnabled = v; if v then startHitboxLoop() else stopHitboxLoop() end end })
-GameplaySub:AddSlider({ Name = "Hitbox Size", Min = 2, Max = 12, Default = 4, Flag = "rage_hitboxsize",
-    Callback = function(v) hitboxSize = v; if hitboxEnabled then applyHitbox(true) end end })
+GameplaySub:AddToggle({
+    Name = "Expand Hitbox", Default = false, Flag = "rage_hitbox",
+    Callback = function(v) hitboxEnabled = v; if v then startHitboxLoop() else stopHitboxLoop() end end,
+})
+GameplaySub:AddSlider({
+    Name = "Hitbox Size", Min = 2, Max = 12, Default = 4, Flag = "rage_hitboxsize",
+    Callback = function(v) hitboxSize = v; if hitboxEnabled then applyHitbox(true) end end,
+})
 
--- ── RAGE ──
-local RageSub = MM2Tab:AddSubTab("Rage")
-RageSub:AddSection("Murderer")
-local murderKillAll = false
-local murderKillDistance = 35
-local murderKillDelay = 0.18
-
-local function isMurderer()
-    local char = GetCharacter(); if not char then return false end
-    for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower():find("knife") then return true end
-    end
-    return false
-end
-local function killPlayer(targetPlr)
-    local char = targetPlr.Character; if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local myHRP = GetHRP(); local myChar = GetCharacter()
-    if not hrp or not myHRP or not myChar then return end
-    local knife = myChar:FindFirstChildOfClass("Tool")
-    if not knife or not knife.Name:lower():find("knife") then
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        if bp then knife = bp:FindFirstChildOfClass("Tool") end
-        if knife and knife.Name:lower():find("knife") then
-            pcall(function() knife.Parent = myChar end); task.wait(0.15)
-        else return end
-    end
-    local origSize = hrp.Size
-    pcall(function() hrp.Size = Vector3.new(10, 10, 10); hrp.CanCollide = false; hrp.Transparency = 0.5 end)
-    pcall(function()
-        local handle = knife:FindFirstChild("Handle") or knife:FindFirstChild("Blade") or knife:FindFirstChildWhichIsA("BasePart")
-        if handle then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and firetouchinterest then
-                    firetouchinterest(handle, part, 0)
-                    firetouchinterest(handle, part, 1)
-                end
-            end
-            pcall(function() knife:Activate() end)
-        end
-    end)
-    task.wait(0.05)
-    pcall(function() hrp.Size = origSize; hrp.Transparency = 1 end)
-end
-
-RageSub:AddToggle({ Name = "Kill Aura (nearby)", Default = false, Flag = "mm2_killaura", Callback = function(v) murderKillAll = v end })
-RageSub:AddSlider({ Name = "Aura Distance", Min = 5, Max = 80, Default = 35, Suffix = " studs", Flag = "mm2_killdist", Callback = function(v) murderKillDistance = v end })
-RageSub:AddSlider({ Name = "Kill Delay", Min = 0.05, Max = 1, Default = 0.18, Suffix = "s", Flag = "mm2_killdelay", Callback = function(v) murderKillDelay = v end })
-RageSub:AddButton({ Name = "Kill All (Murderer)", Primary = true, Callback = function()
-    if not isMurderer() then Notify("Rage", "You are not Murderer!", "Error"); return end
-    task.spawn(function()
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if HUB.dead then break end
-            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") and plr.Character.Humanoid.Health > 0 then
-                killPlayer(plr); task.wait(murderKillDelay)
-            end
-        end
-        Notify("Rage", "Kill All done", "Success")
-    end)
-end })
-
-task.spawn(function()
-    while not HUB.dead do
-        if murderKillAll and isMurderer() then
-            local myPos = GetHRP() and GetHRP().Position or Vector3.zero
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and plr.Character then
-                    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                    if hrp and hum and hum.Health > 0 and (hrp.Position - myPos).Magnitude <= murderKillDistance then
-                        killPlayer(plr); task.wait(murderKillDelay)
-                    end
-                end
-            end
-        end
-        task.wait(0.12)
-    end
-end)
-
-RageSub:AddSection("Sheriff")
-RageSub:AddButton({ Name = "Grab Gun if Dropped", Callback = function()
-    local gunDrop = nil
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v.Name:lower():find("gun") and v:IsA("Tool") then gunDrop = v; break end
-    end
-    if gunDrop then
-        local hrp = GetHRP()
-        if hrp then
-            local pos = gunDrop:FindFirstChild("Handle") and gunDrop.Handle.Position or hrp.Position
-            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2, 0))
-            Notify("Rage", "Teleported to gun", "Success")
-        end
-    else
-        Notify("Rage", "No dropped gun found", "Error")
-    end
-end })
-
-local sheriff = { silentEnabled = false, fov = 150, hitPart = "Head" }
-local fovCircle = hasDrawing and newDrawing("Circle", { Thickness = 1.5, NumSides = 64, Radius = 150, Filled = false, Visible = false, Color = Color3.fromRGB(255, 255, 255) }) or nil
-
-track(RunService.RenderStepped:Connect(function()
-    if fovCircle then
-        local on = sheriff.silentEnabled
-        fovCircle.Visible = on
-        if on then
-            pcall(function()
-                fovCircle.Radius = sheriff.fov
-                fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            end)
-        end
-    end
-    if sheriff.silentEnabled then
-        local closest, dist = nil, 200
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local part = player.Character:FindFirstChild(sheriff.hitPart) or player.Character:FindFirstChild("Head")
-                local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                if part and hum and hum.Health > 0 then
-                    local pos, visible = Camera:WorldToViewportPoint(part.Position)
-                    if visible then
-                        local mag = (Vector2.new(pos.X, pos.Y) - UserInputService:GetMouseLocation()).Magnitude
-                        if mag < dist then dist = mag; closest = part end
-                    end
-                end
-            end
-        end
-        if closest then Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position) end
-    end
-end))
-
-RageSub:AddToggle({ Name = "Silent Aim", Default = false, Flag = "sheriff_silent", Callback = function(v) sheriff.silentEnabled = v end })
-RageSub:AddSlider({ Name = "FOV Radius", Min = 10, Max = 600, Default = 150, Suffix = "px", Flag = "sheriff_fov", Callback = function(v) sheriff.fov = v end })
-RageSub:AddDropdown({ Name = "Hit Part", Options = { "Head", "HumanoidRootPart", "UpperTorso" }, Default = "Head", Flag = "sheriff_hitpart", Callback = function(v) sheriff.hitPart = v end })
-
--- ── SYSTEM ──
+-- ── SYSTEM ──────────────────────────────────────────────────────────────
 local SysSub = MM2Tab:AddSubTab("System")
 SysSub:AddSection("Balance")
 local moneyLabel = SysSub:AddParagraph({ Title = "Balance", Text = ("Coins: %s\nLevel: %d\nRole: %s"):format(FormatMoney(GetCoins()), GetLevel(), GetRole()) })
@@ -901,42 +813,39 @@ end })
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: OTHERS
 -- ════════════════════════════════════════════════════════════════════════════
-local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "More games" })
+local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "More games soon", Icon = "grid" })
 local OthersSub = OthersTab:AddSubTab("Coming Soon")
-Library:AddSubTabPlaceholder(OthersSub, "soon...")
+OthersSub:AddParagraph({ Title = "soon...", Text = "Other games will be added here later." })
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- TAB: SETTINGS (Themes + Keybind + Rejoin)
 -- ════════════════════════════════════════════════════════════════════════════
-local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Themes & server" })
+local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Themes & server", Icon = "settings" })
 local SettingsSub = SettingsTab:AddSubTab("Themes")
 
 SettingsSub:AddSection("Theme")
-SettingsSub:AddDropdown({ Name = "Theme", Options = { "Dark", "Light", "OLED" }, Default = "Dark", Flag = "ui_theme",
-    Callback = function(v) pcall(function() Library:SetTheme(v) end) end })
-
-SettingsSub:AddSection("Accent Color")
-SettingsSub:AddColorPicker({ Name = "Accent", Default = Color3.fromRGB(168, 120, 245), Flag = "ui_accent",
-    Callback = function(c) pcall(function() Library:SetAccent(c) end) end })
+SettingsSub:AddDropdown({
+    Name = "Theme", Options = { "Dark", "Light", "OLED" }, Default = "Dark", Flag = "ui_theme",
+    Callback = function(v) pcall(function() Library:SetTheme(v) end) end,
+})
 
 SettingsSub:AddSection("Hub Keybind")
 SettingsSub:AddKeybind({
     Name = "Toggle Hub Key", Default = Enum.KeyCode.RightShift, Flag = "hub_toggle_key",
     Description = "Press to show/hide the hub",
     OnPress = function()
-        if Window._minimized then
-            Window:SetMinimized(false)
-        else
-            Window:SetMinimized(true)
-        end
+        Window:ToggleUI()
     end,
 })
 
 SettingsSub:AddSection("Server")
-SettingsSub:AddButton({ Name = "Rejoin to Server", Primary = true, Callback = function()
-    Notify("Server", "Rejoining...", "Info")
-    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-end })
+SettingsSub:AddButton({
+    Name = "Rejoin to Server", Primary = true,
+    Callback = function()
+        Notify("Server", "Rejoining...", "Info")
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end,
+})
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- BOOT
