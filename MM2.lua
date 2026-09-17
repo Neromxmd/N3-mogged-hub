@@ -86,8 +86,8 @@ local function GetRole(plr)
     return "Innocent"
 end
 local function RoleColor(role)
-    if role == "Murderer" then return Color3.fromRGB(220, 50, 50)
-    elseif role == "Sheriff" then return Color3.fromRGB(50, 120, 255)
+    if role == "Murderer" then return Color3.fromRGB(255, 60, 60)
+    elseif role == "Sheriff" then return Color3.fromRGB(60, 130, 255)
     elseif role:find("Sheriff") then return Color3.fromRGB(80, 140, 255)
     elseif role:find("Murderer") then return Color3.fromRGB(255, 80, 80)
     elseif role == "Dead" then return Color3.fromRGB(120, 120, 120)
@@ -227,15 +227,28 @@ if not _G.N3MoggAntiAFK then
     end)
 end
 
--- ── VISUAL ──
+-- ════════════════════════════════════════════════════════════════════════════
+-- VISUAL
+-- ════════════════════════════════════════════════════════════════════════════
 local VisualSub = MM2Tab:AddSubTab("Visual")
 local hasDrawing = (typeof(Drawing) == "table") or (Drawing ~= nil and pcall(function() return Drawing.new end))
 
 local esp = {
-    enabled = true, players = true, box = false, boxStyle = "Corner", boxThickness = 1,
-    name = false, distance = false, health = false, chams = false, tracer = false,
-    roleESP = true, coinESP = false, gunESP = false, maxDistance = 1000, textSize = 13,
-    color = Color3.fromRGB(30, 90, 220), coinColor = Color3.fromRGB(255, 220, 60),
+    enabled      = true,
+    players      = true,
+    box          = false,
+    boxStyle     = "Corner",
+    boxThickness = 1,
+    name         = true,
+    distance     = false,
+    health       = false,
+    chams        = true,
+    tracer       = false,
+    roleESP      = true,
+    coinESP      = false,
+    maxDistance  = 1000,
+    textSize     = 14,
+    coinColor    = Color3.fromRGB(255, 220, 60),
 }
 local playerObjects = {}
 
@@ -251,6 +264,7 @@ local function newDrawing(class, props)
     for k, v in pairs(props or {}) do pcall(function() d[k] = v end) end
     return trackDrawing(d)
 end
+
 local function MakeBox()
     local box = {}
     if hasDrawing then
@@ -262,13 +276,13 @@ local function MakeBox()
         end
     end
     box.highlight = Instance.new("Highlight")
-    box.highlight.FillTransparency = 0.6
-    box.highlight.OutlineTransparency = 0.5
+    box.highlight.FillTransparency = 0.5
+    box.highlight.OutlineTransparency = 0.2
     box.highlight.Enabled = false
     box.highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     pcall(function() box.highlight.Parent = getEspParent() end)
     table.insert(HUB.highlights, box.highlight)
-    box.name = newDrawing("Text", { Color = Color3.fromRGB(255, 255, 255), Size = 13, Outline = true, Centre = true, Visible = false })
+    box.name = newDrawing("Text", { Color = Color3.fromRGB(255, 255, 255), Size = 14, Outline = true, Centre = true, Visible = false })
     box.dist = newDrawing("Text", { Color = Color3.fromRGB(255, 255, 255), Size = 11, Outline = true, Centre = true, Visible = false })
     box.hpText = newDrawing("Text", { Color = Color3.fromRGB(255, 255, 255), Size = 11, Outline = true, Centre = false, Visible = false })
     if hasDrawing then
@@ -278,10 +292,12 @@ local function MakeBox()
     end
     return box
 end
+
 local function AddPlayerESP(p)
     if p == LocalPlayer or playerObjects[p] then return end
     playerObjects[p] = MakeBox()
 end
+
 local function RemovePlayerESP(p)
     local obj = playerObjects[p]
     if not obj then return end
@@ -292,6 +308,7 @@ local function RemovePlayerESP(p)
     if obj.highlight then pcall(function() obj.highlight:Destroy() end) end
     playerObjects[p] = nil
 end
+
 for _, p in ipairs(Players:GetPlayers()) do AddPlayerESP(p) end
 track(Players.PlayerAdded:Connect(AddPlayerESP))
 track(Players.PlayerRemoving:Connect(RemovePlayerESP))
@@ -299,63 +316,83 @@ track(Players.PlayerRemoving:Connect(RemovePlayerESP))
 VisualSub:AddSection("ESP")
 VisualSub:AddToggle({ Name = "Master Enable", Default = true, Flag = "esp_enabled", Callback = function(v) esp.enabled = v end })
 VisualSub:AddToggle({ Name = "Players", Default = true, Flag = "esp_players", Callback = function(v) esp.players = v end })
-VisualSub:AddToggle({ Name = "Role ESP", Default = true, Flag = "esp_role", Callback = function(v) esp.roleESP = v end })
+VisualSub:AddToggle({ Name = "Role ESP (color by role)", Default = true, Flag = "esp_role", Callback = function(v) esp.roleESP = v end })
+VisualSub:AddToggle({ Name = "Name", Default = true, Flag = "esp_name", Callback = function(v) esp.name = v end })
+VisualSub:AddToggle({ Name = "Chams (Highlight)", Default = true, Flag = "esp_chams", Callback = function(v) esp.chams = v end })
 VisualSub:AddToggle({ Name = "Coin ESP", Default = false, Flag = "esp_coin", Callback = function(v) esp.coinESP = v end })
+
 VisualSub:AddSection("Boxes")
 VisualSub:AddToggle({ Name = "2D Box", Default = false, Flag = "esp_box", Callback = function(v) esp.box = v end })
 VisualSub:AddDropdown({ Name = "Box Style", Options = { "Full", "Corner" }, Default = "Corner", Flag = "esp_boxstyle",
     Callback = function(v) esp.boxStyle = v end })
 VisualSub:AddSlider({ Name = "Box Thickness", Min = 1, Max = 5, Default = 1, Flag = "esp_boxthick",
     Callback = function(v) esp.boxThickness = v end })
-VisualSub:AddSection("Text")
-VisualSub:AddToggle({ Name = "Name", Default = false, Flag = "esp_name", Callback = function(v) esp.name = v end })
-VisualSub:AddToggle({ Name = "Distance", Default = false, Flag = "esp_distance", Callback = function(v) esp.distance = v end })
-VisualSub:AddSlider({ Name = "Text Size", Min = 10, Max = 20, Default = 13, Flag = "esp_textsize",
-    Callback = function(v) esp.textSize = v end })
-VisualSub:AddSection("Extras")
-VisualSub:AddToggle({ Name = "Chams (Highlight)", Default = false, Flag = "esp_chams", Callback = function(v) esp.chams = v end })
 VisualSub:AddToggle({ Name = "Health Bar", Default = false, Flag = "esp_health", Callback = function(v) esp.health = v end })
 VisualSub:AddToggle({ Name = "Tracers", Default = false, Flag = "esp_tracers", Callback = function(v) esp.tracer = v end })
+VisualSub:AddToggle({ Name = "Distance", Default = false, Flag = "esp_distance", Callback = function(v) esp.distance = v end })
+VisualSub:AddSlider({ Name = "Text Size", Min = 10, Max = 20, Default = 14, Flag = "esp_textsize",
+    Callback = function(v) esp.textSize = v end })
 VisualSub:AddSlider({ Name = "Max Distance", Min = 0, Max = 5000, Default = 1000, Suffix = "m", Flag = "esp_maxdist",
     Callback = function(v) esp.maxDistance = v end })
 
+-- ── getBox2D: быстрый расчёт бокса ──
 local function getBox2D(char)
     if not char then return nil end
-    local ok, cf, size = pcall(function() return char:GetBoundingBox() end)
-    if not ok or not cf or not size then return nil end
-    if size.Magnitude < 1 then
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return nil end
-        cf = hrp.CFrame; size = Vector3.new(3, 6, 2)
-    end
-    local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
-    local anyOn = false
-    for x = -1, 1, 2 do for y = -1, 1, 2 do for z = -1, 1, 2 do
-        local corner = (cf * CFrame.new(size.X / 2 * x, size.Y / 2 * y, size.Z / 2 * z)).Position
-        local sp, on = Camera:WorldToViewportPoint(corner)
-        if sp.Z > 0 then
-            anyOn = anyOn or on
-            minX = math.min(minX, sp.X); minY = math.min(minY, sp.Y)
-            maxX = math.max(maxX, sp.X); maxY = math.max(maxY, sp.Y)
-        end
-    end end end
-    if minX == math.huge or not anyOn then return nil end
-    return minX, minY, maxX, maxY
+    local head = char:FindFirstChild("Head")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    -- Точки для верх/низ: голова и ноги (или HRP)
+    local topPos = head and head.Position or (hrp.Position + Vector3.new(0, 1.5, 0))
+    local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
+
+    local topScreen, topOn = Camera:WorldToViewportPoint(topPos)
+    local botScreen, botOn = Camera:WorldToViewportPoint(bottomPos)
+    if not topOn or not botOn or topScreen.Z <= 0 then return nil end
+
+    local h = math.abs(botScreen.Y - topScreen.Y)
+    if h < 8 then h = 8 end
+    local w = h * 0.5
+    local cx = topScreen.X
+    local leftX = cx - w / 2
+    local rightX = cx + w / 2
+    local topY = topScreen.Y - 8
+    local bottomY = botScreen.Y
+    return leftX, topY, rightX, bottomY
 end
 
+-- ── Роль: кэш на 0.15 сек ──
+local roleCache = {}
+local roleCacheTime = 0
+local ROLE_CACHE_TTL = 0.15
+
+local function refreshRoleCache()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            roleCache[p] = GetRole(p)
+        end
+    end
+    roleCacheTime = tick()
+end
+
+-- ── Основной цикл ESP ──
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
+    if tick() - roleCacheTime > ROLE_CACHE_TTL then
+        refreshRoleCache()
+    end
     local hrp = GetHRP()
     local myPos = hrp and hrp.Position or Vector3.zero
+
     for p, obj in pairs(playerObjects) do
         local visible = esp.enabled and esp.players
         local char = p.Character
-        local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
         local hrp2 = char and char:FindFirstChild("HumanoidRootPart")
-        local hum2 = char and char:FindFirstChildOfClass("Humanoid")
-        if visible and head and hrp2 then
+        local hum2 = char and char:FindFirstChild("Humanoid")
+        if visible and hrp2 and hum2 and hum2.Health > 0 then
             local dist = (hrp2.Position - myPos).Magnitude
-            local color = (esp.roleESP and RoleColor(GetRole(p))) or esp.color
+            local roleName = roleCache[p] or GetRole(p)
+            local color = esp.roleESP and RoleColor(roleName) or Color3.fromRGB(255, 255, 255)
+
             if esp.maxDistance > 0 and dist > esp.maxDistance then
                 if obj.frame then obj.frame.Visible = false end
                 if obj.outline then obj.outline.Visible = false end
@@ -368,14 +405,40 @@ track(RunService.RenderStepped:Connect(function()
                 if obj.hpText then obj.hpText.Visible = false end
                 if obj.highlight then obj.highlight.Enabled = false end
             else
-                if obj.highlight and obj.highlight.Adornee ~= char then pcall(function() obj.highlight.Adornee = char end) end
+                -- Highlight (Chams)
+                if obj.highlight then
+                    if obj.highlight.Adornee ~= char then pcall(function() obj.highlight.Adornee = char end) end
+                    obj.highlight.FillColor = color
+                    obj.highlight.OutlineColor = color
+                    obj.highlight.Enabled = (esp.chams or esp.roleESP)
+                end
+
+                -- НИК крепится к голове (без бокса) — не отстаёт
+                if esp.name and obj.name then
+                    local headPart = char:FindFirstChild("Head")
+                    local headPos = (headPart and headPart.Position or hrp2.Position) + Vector3.new(0, 1.2, 0)
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
+                    if onScreen and screenPos.Z > 0 then
+                        obj.name.Visible = true
+                        obj.name.Text = p.Name
+                        obj.name.Color = color
+                        obj.name.Size = esp.textSize
+                        obj.name.Position = Vector2.new(screenPos.X, screenPos.Y)
+                    else
+                        obj.name.Visible = false
+                    end
+                else
+                    if obj.name then obj.name.Visible = false end
+                end
+
+                -- Бокс / дист / трейсер / HP — от getBox2D
                 local leftX, topY, rightX, bottomY = getBox2D(char)
                 if leftX then
-                    local w = rightX - leftX; local h = bottomY - topY
-                    if h < 8 then local pad = (8 - h) / 2; topY = topY - pad; bottomY = bottomY + pad; h = 8 end
-                    if w < 6 then local pad = (6 - w) / 2; leftX = leftX - pad; rightX = rightX + pad; w = 6 end
+                    local w = rightX - leftX
+                    local h = bottomY - topY
                     local cx = (leftX + rightX) / 2
                     local cornerLen = math.clamp(w * 0.28, 4, 18)
+
                     if esp.box and hasDrawing then
                         if esp.boxStyle == "Corner" then
                             if obj.frame then obj.frame.Visible = false end
@@ -415,28 +478,29 @@ track(RunService.RenderStepped:Connect(function()
                         if obj.outline then obj.outline.Visible = false end
                         if obj.corners then for _, l in ipairs(obj.corners) do if l then l.Visible = false end end end
                     end
-                    if esp.name and obj.name then
-                        obj.name.Visible = true
-                        obj.name.Text = p.DisplayName ~= p.Name and (p.DisplayName .. " (@" .. p.Name .. ")") or p.Name
-                        obj.name.Color = color; obj.name.Size = esp.textSize
-                        obj.name.Position = Vector2.new(cx, topY - 14)
-                    else if obj.name then obj.name.Visible = false end end
+
                     if esp.distance and obj.dist then
                         obj.dist.Visible = true
                         obj.dist.Text = string.format("%.0fm", dist / 3)
                         obj.dist.Size = math.max(9, esp.textSize - 2)
                         obj.dist.Position = Vector2.new(cx, bottomY + 4)
-                    else if obj.dist then obj.dist.Visible = false end end
+                    else
+                        if obj.dist then obj.dist.Visible = false end
+                    end
+
                     if esp.tracer and obj.tracer then
                         obj.tracer.Visible = true; obj.tracer.Color = color
                         local vs = Camera.ViewportSize
                         obj.tracer.From = Vector2.new(vs.X / 2, vs.Y - 4)
                         obj.tracer.To = Vector2.new(cx, bottomY)
-                    else if obj.tracer then obj.tracer.Visible = false end end
-                    local humHealth = hum2 and hum2.Health or 100
-                    local humMax = hum2 and hum2.MaxHealth or 100
+                    else
+                        if obj.tracer then obj.tracer.Visible = false end
+                    end
+
+                    local humHealth = hum2.Health
+                    local humMax = hum2.MaxHealth
                     local healthFrac = math.clamp(humHealth / math.max(humMax, 1), 0, 1)
-                    if esp.health and hasDrawing and hum2 then
+                    if esp.health and hasDrawing then
                         local barX = leftX - 5
                         if obj.hpOutline then obj.hpOutline.Visible = true; obj.hpOutline.From = Vector2.new(barX, topY - 1); obj.hpOutline.To = Vector2.new(barX, bottomY + 1) end
                         if obj.hp then
@@ -453,20 +517,13 @@ track(RunService.RenderStepped:Connect(function()
                         if obj.hp then obj.hp.Visible = false end
                         if obj.hpText then obj.hpText.Visible = false end
                     end
-                    if obj.highlight then
-                        if esp.chams then
-                            obj.highlight.FillColor = color; obj.highlight.OutlineColor = color
-                            obj.highlight.Enabled = true
-                        else obj.highlight.Enabled = false end
-                    end
                 else
                     if obj.frame then obj.frame.Visible = false end
                     if obj.outline then obj.outline.Visible = false end
                     if obj.corners then for _, l in ipairs(obj.corners) do if l then l.Visible = false end end end
-                    if obj.name then obj.name.Visible = false end
                     if obj.dist then obj.dist.Visible = false end
                     if obj.tracer then obj.tracer.Visible = false end
-                    if obj.highlight then obj.highlight.Enabled = false end
+                    -- НИК и HIGHLIGHT не трогаем
                 end
             end
         else
@@ -484,6 +541,7 @@ track(RunService.RenderStepped:Connect(function()
     end
 end))
 
+-- ── Coin ESP ──
 local coinHighlights = {}
 task.spawn(function()
     while not HUB.dead do
@@ -515,6 +573,7 @@ task.spawn(function()
     end
 end)
 
+-- ── World ──
 VisualSub:AddSection("World")
 local fullbright = false
 local savedLighting = { Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime, FogEnd = Lighting.FogEnd, GlobalShadows = Lighting.GlobalShadows, Ambient = Lighting.Ambient }
@@ -534,7 +593,9 @@ local defaultFOV = Camera.FieldOfView
 VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
     Callback = function(v) Camera.FieldOfView = v end })
 
--- ── GAMEPLAY ──
+-- ════════════════════════════════════════════════════════════════════════════
+-- GAMEPLAY
+-- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
 local autoCollect = false
@@ -624,7 +685,9 @@ GameplaySub:AddToggle({ Name = "Expand Hitbox", Default = false, Flag = "rage_hi
 GameplaySub:AddSlider({ Name = "Hitbox Size", Min = 2, Max = 12, Default = 4, Flag = "rage_hitboxsize",
     Callback = function(v) hitboxSize = v; if hitboxEnabled then applyHitbox(true) end end })
 
--- ── SYSTEM ──
+-- ════════════════════════════════════════════════════════════════════════════
+-- SYSTEM
+-- ════════════════════════════════════════════════════════════════════════════
 local SysSub = MM2Tab:AddSubTab("System")
 SysSub:AddSection("Balance")
 local moneyLabel = SysSub:AddParagraph({ Title = "Balance", Text = ("Coins: %s\nLevel: %d\nRole: %s"):format(FormatMoney(GetCoins()), GetLevel(), GetRole()) })
