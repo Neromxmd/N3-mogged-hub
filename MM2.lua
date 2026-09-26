@@ -637,36 +637,35 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 
 -- ── AUTO FARM COINS (Smooth) ──
+-- ════════════════════════════════════════════════════════════════════════════
+-- AUTO FARM COINS (Auto — no camera, fixed speed)
+-- ════════════════════════════════════════════════════════════════════════════
 GameplaySub:AddSection("Auto Farm Coins")
 
 local autoFarm = {
-    enabled     = false,
-    speed       = 25,
-    flyHeight   = 5,
-    range       = 20,
+    enabled    = false,
+    flyTime    = 2,      -- сек на монету (фиксированно)
+    flyHeight  = 5,
     collectDist = 4,
-    noclip      = true,
-    coinLimit   = 40,
-    collected   = 0,
-    status      = "Idle",
+    noclip     = true,
+    coinLimit  = 40,
+    collected  = 0,
 }
 
 GameplaySub:AddToggle({
     Name = "Auto Farm Coins", Default = false, Flag = "auto_farm_enabled",
-    Description = "Плавный полёт по карте + сбор монет",
+    Description = "Летит к ближайшей монете без участия игрока",
     Callback = function(v) autoFarm.enabled = v end,
 })
 GameplaySub:AddSlider({
-    Name = "Speed", Min = 10, Max = 60, Default = 25, Suffix = " studs/s",
-    Flag = "auto_farm_speed", Callback = function(v) autoFarm.speed = v end,
+    Name = "Fly Time", Min = 1, Max = 5, Default = 2, Suffix = " sec",
+    Flag = "auto_farm_flytime",
+    Callback = function(v) autoFarm.flyTime = v end,
 })
 GameplaySub:AddSlider({
     Name = "Fly Height", Min = 2, Max = 15, Default = 5, Suffix = " studs",
-    Flag = "auto_farm_height", Callback = function(v) autoFarm.flyHeight = v end,
-})
-GameplaySub:AddSlider({
-    Name = "Detection Range", Min = 5, Max = 40, Default = 20, Suffix = " studs",
-    Flag = "auto_farm_range", Callback = function(v) autoFarm.range = v end,
+    Flag = "auto_farm_height",
+    Callback = function(v) autoFarm.flyHeight = v end,
 })
 GameplaySub:AddToggle({
     Name = "Auto Noclip", Default = true, Flag = "auto_farm_noclip",
@@ -674,7 +673,8 @@ GameplaySub:AddToggle({
 })
 GameplaySub:AddSlider({
     Name = "Coin Limit (per round)", Min = 5, Max = 200, Default = 40,
-    Flag = "auto_farm_limit", Callback = function(v) autoFarm.coinLimit = v end,
+    Flag = "auto_farm_limit",
+    Callback = function(v) autoFarm.coinLimit = v end,
 })
 
 local autoFarmStatus = GameplaySub:AddParagraph({
@@ -682,21 +682,16 @@ local autoFarmStatus = GameplaySub:AddParagraph({
     Text = "Idle | Coins: 0/40",
 })
 
-local autoFarmConn       = nil
-local autoFarmTarget     = nil
-local autoFarmLastScan   = 0
-local autoFarmFlying     = false
-local autoFarmOriginalGravity = Workspace.Gravity
-
+-- ── Поиск ближайшей монеты (без кеша — раз в цикл) ──
 local function findNearestCoin()
     local hrp = GetHRP()
     if not hrp then return nil end
     local myPos = hrp.Position
-    local best, bestDist = nil, autoFarm.range
+    local best, bestDist = nil, math.huge
     for _, v in ipairs(Workspace:GetDescendants()) do
         if v:IsA("BasePart")
-            and v.Transparency < 1
             and v.Parent
+            and v.Transparency < 1
             and (v.Name == "Coin" or v.Name:lower():find("coin")) then
             local ok, d = pcall(function() return (v.Position - myPos).Magnitude end)
             if ok and d < bestDist then
@@ -708,6 +703,54 @@ local function findNearestCoin()
     return best
 end
 
+-- ── Noclip ──
+local function applyNoclip()
+    if not autoFarm.noclip then return end
+    local char = GetCharacter()
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then part.CanCollide = false end
+    end
+end
+
+-- ── Полёт к позиции через Tween ──
+local function flyToPosition(targetPos)
+    local hrp = GetHRP()
+    if not hrp then return false end
+
+    applyNoclip()
+
+    local target = targetPos + Vector3.new(0, autoFarm.flyHeight, 0)
+    local dist = (target - hrp.Position).Magnitude
+    local duration = autoFarm.flyTime
+
+    -- Если очень далеко — чуть дольше, но не больше 2x
+    if dist > 100 then duration = autoFarm.flyTime * 1.5 end
+
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(duration, Enum.EasingStyle.Linear),
+        { CFrame = CFrame.new(target) }
+    )
+    tween:Play()
+
+    -- Ждём завершения (с таймаутом)
+    local timeout = tick() + duration + 1
+    while tween.PlaybackState == Enum.PlaybackState.Playing do
+        if not autoFarm.enabled then
+            tween:Cancel()
+            return false
+        end
+        if tick() > timeout then
+            tween:Cancel()
+            return false
+        end
+        task.wait(0.05)
+    end
+    return true
+end
+
+-- ── Сбор монеты ──
 local function collectCoin(coin)
     local hrp = GetHRP()
     if not hrp or not coin or not coin.Parent then return end
@@ -718,97 +761,78 @@ local function collectCoin(coin)
             firetouchinterest(hrp, coin, 1)
         end
     end)
-    autoFarm.collected = autoFarm.collected + 1
-    autoFarm.status = string.format("Collected %d/%d", autoFarm.collected, autoFarm.coinLimit)
 end
 
+-- ── Главный цикл ──
+local autoFarmRunning = false
+
 local function stopAutoFarm()
-    autoFarmFlying = false
-    autoFarmTarget = nil
-    if autoFarmConn then autoFarmConn:Disconnect(); autoFarmConn = nil end
+    autoFarmRunning = false
     local h = GetHumanoid()
     if h then h.PlatformStand = false end
     local hrp = GetHRP()
     if hrp then hrp.AssemblyLinearVelocity = Vector3.zero end
-    Workspace.Gravity = autoFarmOriginalGravity
-    autoFarm.status = "Stopped"
+    autoFarmStatus:Set("Stopped")
 end
 
 local function startAutoFarm()
-    if autoFarmFlying then return end
-    autoFarmFlying = true
+    if autoFarmRunning then return end
+    autoFarmRunning = true
     autoFarm.collected = 0
-    autoFarm.status = "Starting..."
-    Workspace.Gravity = autoFarmOriginalGravity
 
-    autoFarmConn = RunService.RenderStepped:Connect(function(dt)
-        if not autoFarm.enabled or not autoFarmFlying then return end
-        local hrp = GetHRP()
-        local hum = GetHumanoid()
-        if not hrp or not hum or hum.Health <= 0 then
-            autoFarmStatus:Set("Waiting for character...")
-            return
-        end
-
-        hum.PlatformStand = true
-
-        if autoFarm.noclip then
-            local char = GetCharacter()
-            if char then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then part.CanCollide = false end
-                end
+    task.spawn(function()
+        while autoFarm.enabled and autoFarmRunning do
+            local hrp = GetHRP()
+            local hum = GetHumanoid()
+            if not hrp or not hum or hum.Health <= 0 then
+                autoFarmStatus:Set("Waiting for character...")
+                task.wait(1)
+                continue
             end
-        end
 
-        local now = tick()
-        if not autoFarmTarget or not autoFarmTarget.Parent
-           or (autoFarmTarget.Position - hrp.Position).Magnitude > autoFarm.range
-           or now - autoFarmLastScan > 0.3 then
-            autoFarmTarget = findNearestCoin()
-            autoFarmLastScan = now
-        end
-
-        local targetPos
-        if autoFarmTarget then
-            targetPos = autoFarmTarget.Position + Vector3.new(0, autoFarm.flyHeight, 0)
-        else
-            local cam = Workspace.CurrentCamera
-            targetPos = hrp.Position
-                + (cam and cam.CFrame.LookVector * 20 or Vector3.new(0, 0, 0))
-                + Vector3.new(0, autoFarm.flyHeight, 0)
-        end
-
-        local dir = (targetPos - hrp.Position)
-        local dist = dir.Magnitude
-        if dist > 0.1 then dir = dir.Unit else dir = Vector3.zero end
-
-        hrp.AssemblyLinearVelocity = dir * autoFarm.speed
-
-        if autoFarmTarget and (autoFarmTarget.Position - hrp.Position).Magnitude <= autoFarm.collectDist then
-            collectCoin(autoFarmTarget)
-            autoFarmTarget = nil
-            autoFarmLastScan = 0
+            -- Лимит достигнут
             if autoFarm.collected >= autoFarm.coinLimit then
-                autoFarm.status = string.format("Limit reached: %d/%d", autoFarm.collected, autoFarm.coinLimit)
-                autoFarmStatus:Set(autoFarm.status)
-                return
+                autoFarmStatus:Set(string.format("Limit: %d/%d. Waiting...", autoFarm.collected, autoFarm.coinLimit))
+                task.wait(2)
+                autoFarm.collected = 0
             end
-        end
 
-        autoFarmStatus:Set(string.format(
-            "Speed: %d | Coins: %d/%d | Target: %s",
-            autoFarm.speed,
-            autoFarm.collected,
-            autoFarm.coinLimit,
-            autoFarmTarget and "coin" or "searching"
-        ))
+            -- Ищем ближайшую монету
+            local coin = findNearestCoin()
+            if not coin then
+                autoFarmStatus:Set(string.format("No coins | %d/%d", autoFarm.collected, autoFarm.coinLimit))
+                task.wait(0.5)
+                continue
+            end
+
+            local dist = (coin.Position - hrp.Position).Magnitude
+            autoFarmStatus:Set(string.format(
+                "Coins: %d/%d | Nearest: %.0fm",
+                autoFarm.collected, autoFarm.coinLimit, dist
+            ))
+
+            -- Летим
+            local ok = flyToPosition(coin.Position)
+            if not ok then
+                task.wait(0.2)
+                continue
+            end
+
+            -- Собираем (монету могли собрать, пока летели — проверяем)
+            if coin and coin.Parent then
+                collectCoin(coin)
+                autoFarm.collected = autoFarm.collected + 1
+            end
+
+            task.wait(0.1)
+        end
+        stopAutoFarm()
     end)
 end
 
 GameplaySub:AddToggle({
     Name = "Start Farm", Default = false, Flag = "auto_farm_start",
-    Description = "Запустить плавный Auto Farm",
+    Description = "Запустить цикл сбора монет",
     Callback = function(v)
         if v then startAutoFarm() else stopAutoFarm() end
     end,
