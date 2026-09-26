@@ -14,7 +14,6 @@ local Workspace          = game:GetService("Workspace")
 local Lighting           = game:GetService("Lighting")
 local TeleportService    = game:GetService("TeleportService")
 local VirtualUser        = game:GetService("VirtualUser")
-local TweenService       = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera      = Workspace.CurrentCamera
@@ -66,7 +65,7 @@ local function GetLevel()
 end
 
 -- ════════════════════════════════════════════════════════════════════════════
--- ROLE TRACKER
+-- ROLE TRACKER (мгновенный, читает атрибуты Role)
 -- ════════════════════════════════════════════════════════════════════════════
 local roleMemory = {}
 
@@ -110,22 +109,27 @@ end
 
 local function GetRole(plr)
     if plr == nil then plr = LocalPlayer end
+
     local r = ReadRoleAttr(plr)
     if r then roleMemory[plr] = r; return r end
+
     local char = plr.Character
     if char then
         r = ReadRoleAttr(char)
         if r then roleMemory[plr] = r; return r end
+
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum and hum.Health <= 0 then
             roleMemory[plr] = "Dead"
             return "Dead"
         end
+
         for _, t in ipairs(char:GetChildren()) do
             r = isToolRole(t)
             if r then roleMemory[plr] = r; return r end
         end
     end
+
     local bp = plr:FindFirstChild("Backpack")
     if bp then
         for _, t in ipairs(bp:GetChildren()) do
@@ -133,6 +137,7 @@ local function GetRole(plr)
             if r then roleMemory[plr] = r; return r end
         end
     end
+
     if roleMemory[plr] then return roleMemory[plr] end
     return "Unknown"
 end
@@ -403,9 +408,11 @@ local function getBox2D(char)
     if not hrp then return nil end
     local topPos = head and head.Position or (hrp.Position + Vector3.new(0, 1.5, 0))
     local bottomPos = hrp.Position - Vector3.new(0, 3, 0)
+
     local topScreen, topOn = Camera:WorldToViewportPoint(topPos)
     local botScreen, botOn = Camera:WorldToViewportPoint(bottomPos)
     if not topOn or not botOn or topScreen.Z <= 0 then return nil end
+
     local h = math.abs(botScreen.Y - topScreen.Y)
     if h < 8 then h = 8 end
     local w = h * 0.5
@@ -462,6 +469,7 @@ track(RunService.RenderStepped:Connect(function()
                     obj.highlight.OutlineColor = color
                     obj.highlight.Enabled = (esp.chams or esp.roleESP)
                 end
+
                 if esp.name and obj.name then
                     local headPart = char:FindFirstChild("Head")
                     local headPos = (headPart and headPart.Position or hrp2.Position) + Vector3.new(0, 1.2, 0)
@@ -478,12 +486,14 @@ track(RunService.RenderStepped:Connect(function()
                 else
                     if obj.name then obj.name.Visible = false end
                 end
+
                 local leftX, topY, rightX, bottomY = getBox2D(char)
                 if leftX then
                     local w = rightX - leftX
                     local h = bottomY - topY
                     local cx = (leftX + rightX) / 2
                     local cornerLen = math.clamp(w * 0.28, 4, 18)
+
                     if esp.box and hasDrawing then
                         if esp.boxStyle == "Corner" then
                             if obj.frame then obj.frame.Visible = false end
@@ -523,6 +533,7 @@ track(RunService.RenderStepped:Connect(function()
                         if obj.outline then obj.outline.Visible = false end
                         if obj.corners then for _, l in ipairs(obj.corners) do if l then l.Visible = false end end end
                     end
+
                     if esp.distance and obj.dist then
                         obj.dist.Visible = true
                         obj.dist.Text = string.format("%.0fm", dist / 3)
@@ -531,6 +542,7 @@ track(RunService.RenderStepped:Connect(function()
                     else
                         if obj.dist then obj.dist.Visible = false end
                     end
+
                     if esp.tracer and obj.tracer then
                         obj.tracer.Visible = true; obj.tracer.Color = color
                         local vs = Camera.ViewportSize
@@ -539,6 +551,7 @@ track(RunService.RenderStepped:Connect(function()
                     else
                         if obj.tracer then obj.tracer.Visible = false end
                     end
+
                     local humHealth = hum2.Health
                     local humMax = hum2.MaxHealth
                     local healthFrac = math.clamp(humHealth / math.max(humMax, 1), 0, 1)
@@ -626,7 +639,8 @@ VisualSub:AddToggle({ Name = "Fullbright", Default = false, Flag = "fullbright",
             Lighting.Brightness = savedLighting.Brightness; Lighting.ClockTime = savedLighting.ClockTime
             Lighting.FogEnd = savedLighting.FogEnd; Lighting.GlobalShadows = savedLighting.GlobalShadows
             Lighting.Ambient = savedLighting.Ambient
-        end    end })
+        end
+    end })
 local defaultFOV = Camera.FieldOfView
 VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
     Callback = function(v) Camera.FieldOfView = v end })
@@ -635,212 +649,50 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
 -- GAMEPLAY
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
-
--- ── AUTO FARM COINS (Smooth) ──
--- ════════════════════════════════════════════════════════════════════════════
--- AUTO FARM COINS (Auto — no camera, fixed speed)
--- ════════════════════════════════════════════════════════════════════════════
 GameplaySub:AddSection("Auto Farm Coins")
+local autoCollect = false
+local autoCollectSpeed = 0.8
 
-local autoFarm = {
-    enabled    = false,
-    flyTime    = 2,      -- сек на монету (фиксированно)
-    flyHeight  = 5,
-    collectDist = 4,
-    noclip     = true,
-    coinLimit  = 40,
-    collected  = 0,
-}
+GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
+    Callback = function(v) autoCollect = v; Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error") end })
+GameplaySub:AddSlider({ Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
+    Callback = function(v) autoCollectSpeed = v end })
 
-GameplaySub:AddToggle({
-    Name = "Auto Farm Coins", Default = false, Flag = "auto_farm_enabled",
-    Description = "Летит к ближайшей монете без участия игрока",
-    Callback = function(v) autoFarm.enabled = v end,
-})
-GameplaySub:AddSlider({
-    Name = "Fly Time", Min = 1, Max = 5, Default = 2, Suffix = " sec",
-    Flag = "auto_farm_flytime",
-    Callback = function(v) autoFarm.flyTime = v end,
-})
-GameplaySub:AddSlider({
-    Name = "Fly Height", Min = 2, Max = 15, Default = 5, Suffix = " studs",
-    Flag = "auto_farm_height",
-    Callback = function(v) autoFarm.flyHeight = v end,
-})
-GameplaySub:AddToggle({
-    Name = "Auto Noclip", Default = true, Flag = "auto_farm_noclip",
-    Callback = function(v) autoFarm.noclip = v end,
-})
-GameplaySub:AddSlider({
-    Name = "Coin Limit (per round)", Min = 5, Max = 200, Default = 40,
-    Flag = "auto_farm_limit",
-    Callback = function(v) autoFarm.coinLimit = v end,
-})
-
-local autoFarmStatus = GameplaySub:AddParagraph({
-    Title = "Status",
-    Text = "Idle | Coins: 0/40",
-})
-
--- ── Поиск ближайшей монеты (без кеша — раз в цикл) ──
-local function findNearestCoin()
-    local hrp = GetHRP()
-    if not hrp then return nil end
-    local myPos = hrp.Position
-    local best, bestDist = nil, math.huge
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart")
-            and v.Parent
-            and v.Transparency < 1
-            and (v.Name == "Coin" or v.Name:lower():find("coin")) then
-            local ok, d = pcall(function() return (v.Position - myPos).Magnitude end)
-            if ok and d < bestDist then
-                best = v
-                bestDist = d
+task.spawn(function()
+    local function getNearestCoin()
+        local hrp = GetHRP(); if not hrp then return nil end
+        local best, bestDist = nil, math.huge
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart") and v.Transparency < 1 and v.Parent and (v.Name == "Coin" or v.Name:lower():find("coin")) then
+                local ok, d = pcall(function() return (v.Position - hrp.Position).Magnitude end)
+                if ok and d < bestDist and d <= 250 then best = v; bestDist = d end
             end
         end
+        return best
     end
-    return best
-end
-
--- ── Noclip ──
-local function applyNoclip()
-    if not autoFarm.noclip then return end
-    local char = GetCharacter()
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then part.CanCollide = false end
+    while not HUB.dead do
+        if autoCollect then
+            pcall(function()
+                local coin = getNearestCoin()
+                local hrp = GetHRP()
+                if coin and hrp then
+                    local dist = (coin.Position - hrp.Position).Magnitude
+                    if dist < 10 then
+                        if firetouchinterest then pcall(function() firetouchinterest(hrp, coin, 0); firetouchinterest(hrp, coin, 1) end) end
+                        pcall(function() hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)) end)
+                        task.wait(0.15)
+                    else
+                        local TweenService = game:GetService("TweenService")
+                        local tw = TweenService:Create(hrp, TweenInfo.new(math.clamp(dist / 100, 0.22, 0.9), Enum.EasingStyle.Linear), { CFrame = CFrame.new(coin.Position + Vector3.new(0, 2.5, 0)) })
+                        tw:Play(); tw.Completed:Wait()
+                    end
+                end
+            end)
+        end
+        task.wait(autoCollect and autoCollectSpeed or 0.5)
     end
-end
+end)
 
--- ── Полёт к позиции через Tween ──
-local function flyToPosition(targetPos)
-    local hrp = GetHRP()
-    if not hrp then return false end
-
-    applyNoclip()
-
-    local target = targetPos + Vector3.new(0, autoFarm.flyHeight, 0)
-    local dist = (target - hrp.Position).Magnitude
-    local duration = autoFarm.flyTime
-
-    -- Если очень далеко — чуть дольше, но не больше 2x
-    if dist > 100 then duration = autoFarm.flyTime * 1.5 end
-
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(duration, Enum.EasingStyle.Linear),
-        { CFrame = CFrame.new(target) }
-    )
-    tween:Play()
-
-    -- Ждём завершения (с таймаутом)
-    local timeout = tick() + duration + 1
-    while tween.PlaybackState == Enum.PlaybackState.Playing do
-        if not autoFarm.enabled then
-            tween:Cancel()
-            return false
-        end
-        if tick() > timeout then
-            tween:Cancel()
-            return false
-        end
-        task.wait(0.05)
-    end
-    return true
-end
-
--- ── Сбор монеты ──
-local function collectCoin(coin)
-    local hrp = GetHRP()
-    if not hrp or not coin or not coin.Parent then return end
-    pcall(function()
-        if firetouchinterest then
-            firetouchinterest(hrp, coin, 0)
-            task.wait(0.02)
-            firetouchinterest(hrp, coin, 1)
-        end
-    end)
-end
-
--- ── Главный цикл ──
-local autoFarmRunning = false
-
-local function stopAutoFarm()
-    autoFarmRunning = false
-    local h = GetHumanoid()
-    if h then h.PlatformStand = false end
-    local hrp = GetHRP()
-    if hrp then hrp.AssemblyLinearVelocity = Vector3.zero end
-    autoFarmStatus:Set("Stopped")
-end
-
-local function startAutoFarm()
-    if autoFarmRunning then return end
-    autoFarmRunning = true
-    autoFarm.collected = 0
-
-    task.spawn(function()
-        while autoFarm.enabled and autoFarmRunning do
-            local hrp = GetHRP()
-            local hum = GetHumanoid()
-            if not hrp or not hum or hum.Health <= 0 then
-                autoFarmStatus:Set("Waiting for character...")
-                task.wait(1)
-                continue
-            end
-
-            -- Лимит достигнут
-            if autoFarm.collected >= autoFarm.coinLimit then
-                autoFarmStatus:Set(string.format("Limit: %d/%d. Waiting...", autoFarm.collected, autoFarm.coinLimit))
-                task.wait(2)
-                autoFarm.collected = 0
-            end
-
-            -- Ищем ближайшую монету
-            local coin = findNearestCoin()
-            if not coin then
-                autoFarmStatus:Set(string.format("No coins | %d/%d", autoFarm.collected, autoFarm.coinLimit))
-                task.wait(0.5)
-                continue
-            end
-
-            local dist = (coin.Position - hrp.Position).Magnitude
-            autoFarmStatus:Set(string.format(
-                "Coins: %d/%d | Nearest: %.0fm",
-                autoFarm.collected, autoFarm.coinLimit, dist
-            ))
-
-            -- Летим
-            local ok = flyToPosition(coin.Position)
-            if not ok then
-                task.wait(0.2)
-                continue
-            end
-
-            -- Собираем (монету могли собрать, пока летели — проверяем)
-            if coin and coin.Parent then
-                collectCoin(coin)
-                autoFarm.collected = autoFarm.collected + 1
-            end
-
-            task.wait(0.1)
-        end
-        stopAutoFarm()
-    end)
-end
-
-GameplaySub:AddToggle({
-    Name = "Start Farm", Default = false, Flag = "auto_farm_start",
-    Description = "Запустить цикл сбора монет",
-    Callback = function(v)
-        if v then startAutoFarm() else stopAutoFarm() end
-    end,
-})
-
--- ════════════════════════════════════════════════════════════════════════════
--- HITBOX EXPANDER
--- ════════════════════════════════════════════════════════════════════════════
 GameplaySub:AddSection("Hitbox Expander")
 local hitboxEnabled, hitboxSize = false, 4
 local hitboxConn
@@ -934,6 +786,7 @@ local OthersTab = Window:AddTab({ Name = "Others", Subtitle = "Extra functions",
 
 -- ── Others → Aim ──
 local OthersAim = OthersTab:AddSubTab("Aim")
+
 local aimCfg = {
     enabled    = false,
     fov        = 120,
@@ -942,6 +795,7 @@ local aimCfg = {
     teamCheck  = false,
 }
 local aimFovCircle = nil
+
 if hasDrawing then
     local ok, c = pcall(function() return Drawing.new("Circle") end)
     if ok and c then
@@ -955,6 +809,7 @@ if hasDrawing then
         aimFovCircle = trackDrawing(c)
     end
 end
+
 OthersAim:AddSection("Aim Assist")
 OthersAim:AddToggle({
     Name = "Aim Assist", Default = false, Flag = "others_aim_enabled",
@@ -1007,6 +862,7 @@ track(RunService.RenderStepped:Connect(function()
     end
     if not aimCfg.enabled then return end
     if not isAimKeyDown(aimCfg.key) then return end
+
     local closest, bestDist = nil, aimCfg.fov
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
@@ -1032,6 +888,7 @@ track(RunService.RenderStepped:Connect(function()
             end
         end
     end
+
     if closest then
         Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Position)
     end
@@ -1039,12 +896,14 @@ end))
 
 -- ── Others → ESP ──
 local OthersESP = OthersTab:AddSubTab("ESP")
+
 local simpleEspCfg = {
     enabled  = false,
     color    = Color3.fromRGB(255, 255, 255),
     textSize = 14,
 }
 local simpleEspList = {}
+
 local function makeSimpleEspText()
     if not hasDrawing then return nil end
     local ok, d = pcall(function() return Drawing.new("Text") end)
@@ -1057,6 +916,7 @@ local function makeSimpleEspText()
     d.Visible = false
     return trackDrawing(d)
 end
+
 local function addSimpleEsp(p)
     if p == LocalPlayer or simpleEspList[p] then return end
     simpleEspList[p] = makeSimpleEspText()
@@ -1067,9 +927,11 @@ local function removeSimpleEsp(p)
         simpleEspList[p] = nil
     end
 end
+
 for _, p in ipairs(Players:GetPlayers()) do addSimpleEsp(p) end
 track(Players.PlayerAdded:Connect(addSimpleEsp))
 track(Players.PlayerRemoving:Connect(removeSimpleEsp))
+
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
     for p, d in pairs(simpleEspList) do
@@ -1092,6 +954,7 @@ track(RunService.RenderStepped:Connect(function()
         end
     end
 end))
+
 OthersESP:AddSection("Simple ESP")
 OthersESP:AddToggle({
     Name = "Simple ESP", Default = false, Flag = "others_esp_enabled",
@@ -1122,17 +985,20 @@ OthersESP:AddSlider({
 -- ════════════════════════════════════════════════════════════════════════════
 local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Themes & server", Icon = "settings" })
 local SettingsSub = SettingsTab:AddSubTab("Themes")
+
 SettingsSub:AddSection("Theme")
 SettingsSub:AddDropdown({
     Name = "Theme", Options = { "Dark", "Light", "OLED" }, Default = "Dark", Flag = "ui_theme",
     Callback = function(v) pcall(function() Library:SetTheme(v) end) end,
 })
+
 SettingsSub:AddSection("Hub Keybind")
 SettingsSub:AddKeybind({
     Name = "Toggle Hub Key", Default = Enum.KeyCode.RightShift, Flag = "hub_toggle_key",
     Description = "Press to show/hide the hub",
     OnPress = function() Window:ToggleUI() end,
 })
+
 SettingsSub:AddSection("Server")
 SettingsSub:AddButton({
     Name = "Rejoin to Server", Primary = true,
