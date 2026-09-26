@@ -481,41 +481,34 @@ local function createIconElement(parent, iconType, iconValue, size, zindex)
     end
 end
 
-local TAG_BASE_URL          = "https://adorable-sallyanne-fgdfgdfgd-b2d051be.koyeb.app"
-local TAG_REGISTER          = TAG_BASE_URL .. "/register"
-local TAG_USERS             = TAG_BASE_URL .. "/users"
-local TAG_ADMIN_DISCONNECT  = TAG_BASE_URL .. "/admin/disconnect"
-local ADMIN_USER_IDS = { [2401825836] = true }
-local function isAdminUser(player)
-    return player and ADMIN_USER_IDS[player.UserId] == true
-end
-local TAG_W             = 200
-local TAG_H             = 52
-local TAG_WORLD_HEIGHT  = 3.4
-local TAG_FULL_DIST     = 40
-local TAG_MAX_DISTANCE  = 110
+-- ════════════════════════════════════════════════════════════════════════════
+-- N3 TAG SYSTEM (свой, независимый)
+-- ════════════════════════════════════════════════════════════════════════════
+local N3_TAG_BASE_URL = "https://n3-tag-server.onrender.com"
+local N3_TAG_REGISTER = N3_TAG_BASE_URL .. "/register"
+local N3_TAG_USERS    = N3_TAG_BASE_URL .. "/users"
+
+local N3_TAG_W            = 200
+local N3_TAG_H            = 52
+local N3_TAG_WORLD_HEIGHT = 3.4
+local N3_TAG_FULL_DIST    = 40
+local N3_TAG_MAX_DISTANCE = 110
+
+local N3_TAG_OUTLINE_COLOR = Color3.fromRGB(167, 200, 244)
+
 local httpRequest = (syn and syn.request)
     or (http and http.request)
     or (http_request)
     or (request)
+
 local TagSystem = {}
 TagSystem._tags        = {}
 TagSystem._screenGui   = nil
 TagSystem._active      = {}
 TagSystem._userInfo    = {}
-TagSystem._listeners   = {}
 TagSystem._running     = false
 TagSystem._connections = {}
-function TagSystem:OnUsersUpdated(fn)
-    if type(fn) == "function" then table.insert(TagSystem._listeners, fn) end
-    return fn
-end
-function TagSystem:RemoveListener(fn)
-    for i, f in ipairs(TagSystem._listeners) do
-        if f == fn then table.remove(TagSystem._listeners, i); return true end
-    end
-    return false
-end
+
 local function ensureTagGui()
     if TagSystem._screenGui and TagSystem._screenGui.Parent then return end
     local localPlayer = Players.LocalPlayer
@@ -523,11 +516,11 @@ local function ensureTagGui()
     pcall(function() targetParent = (gethui and gethui()) or game:GetService("CoreGui") end)
     if not targetParent then targetParent = localPlayer:WaitForChild("PlayerGui") end
     local sg = Instance.new("ScreenGui")
-    sg.Name               = "OxideTagGui"
-    sg.ResetOnSpawn       = false
-    sg.IgnoreGuiInset     = true
-    sg.ZIndexBehavior     = Enum.ZIndexBehavior.Sibling
-    sg.DisplayOrder       = 8
+    sg.Name           = "N3TagGui"
+    sg.ResetOnSpawn   = false
+    sg.IgnoreGuiInset = true
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.DisplayOrder   = 8
     pcall(function() sg.Parent = targetParent end)
     if not sg.Parent then
         targetParent = localPlayer:WaitForChild("PlayerGui")
@@ -535,35 +528,42 @@ local function ensureTagGui()
     end
     TagSystem._screenGui = sg
 end
+
 local function buildTagFrame(player)
     ensureTagGui()
     local sg = TagSystem._screenGui
     local root = Instance.new("Frame")
-    root.Name              = "OxideTag_" .. player.UserId
-    root.Size              = UDim2.fromOffset(TAG_W, TAG_H)
-    root.AnchorPoint       = Vector2.new(0.5, 0.5)
-    root.BackgroundColor3  = Color3.fromRGB(22, 22, 26)
+    root.Name             = "N3Tag_" .. player.UserId
+    root.Size             = UDim2.fromOffset(N3_TAG_W, N3_TAG_H)
+    root.AnchorPoint      = Vector2.new(0.5, 0.5)
+    root.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
     root.BackgroundTransparency = 0.06
-    root.BorderSizePixel   = 0
-    root.Visible           = false
-    root.ZIndex            = 10
-    root.Parent            = sg
+    root.BorderSizePixel  = 0
+    root.Visible          = false
+    root.ZIndex           = 10
+    root.Parent           = sg
+
     local cr = Instance.new("UICorner")
     cr.CornerRadius = UDim.new(0, 10)
     cr.Parent = root
-    local shadow = Instance.new("ImageLabel")
-    shadow.Name                = "Shadow"
-    shadow.Image               = "rbxassetid://1316045217"
-    shadow.ImageColor3         = Color3.fromRGB(0, 0, 0)
-    shadow.ImageTransparency   = 0.55
-    shadow.ScaleType           = Enum.ScaleType.Slice
-    shadow.SliceCenter         = Rect.new(10, 10, 118, 118)
-    shadow.BackgroundTransparency = 1
-    shadow.AnchorPoint         = Vector2.new(0.5, 0.5)
-    shadow.Position           = UDim2.fromScale(0.5, 0.5)
-    shadow.Size               = UDim2.new(1, 14, 1, 14)
-    shadow.ZIndex             = 0
-    shadow.Parent             = root
+
+    local glowStroke = Instance.new("UIStroke")
+    glowStroke.Thickness       = 1.1
+    glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    glowStroke.Color           = N3_TAG_OUTLINE_COLOR
+    glowStroke.Transparency    = 0.2
+    glowStroke.Parent          = root
+
+    local glowGrad = Instance.new("UIGradient")
+    glowGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.00, N3_TAG_OUTLINE_COLOR),
+        ColorSequenceKeypoint.new(0.40, N3_TAG_OUTLINE_COLOR),
+        ColorSequenceKeypoint.new(0.50, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.60, N3_TAG_OUTLINE_COLOR),
+        ColorSequenceKeypoint.new(1.00, N3_TAG_OUTLINE_COLOR),
+    })
+    glowGrad.Parent = glowStroke
+
     local fadeOverlay = Instance.new("Frame")
     fadeOverlay.Name               = "FadeOverlay"
     fadeOverlay.Size               = UDim2.fromScale(1, 1)
@@ -575,79 +575,36 @@ local function buildTagFrame(player)
     local fadeCr = Instance.new("UICorner")
     fadeCr.CornerRadius = UDim.new(0, 10)
     fadeCr.Parent = fadeOverlay
-    local glowStroke = Instance.new("UIStroke")
-    glowStroke.Thickness          = 1.1
-    glowStroke.ApplyStrokeMode    = Enum.ApplyStrokeMode.Border
-    glowStroke.Color              = C.Accent
-    glowStroke.Transparency       = 0.2
-    glowStroke.Parent             = root
-    local glowGrad = Instance.new("UIGradient")
-    glowGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0.00, C.Accent),
-        ColorSequenceKeypoint.new(0.40, C.Accent),
-        ColorSequenceKeypoint.new(0.50, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.60, C.Accent),
-        ColorSequenceKeypoint.new(1.00, C.Accent),
-    })
-    glowGrad.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0.00, 1.0),
-        NumberSequenceKeypoint.new(0.34, 1.0),
-        NumberSequenceKeypoint.new(0.50, 0.0),
-        NumberSequenceKeypoint.new(0.66, 1.0),
-        NumberSequenceKeypoint.new(1.00, 1.0),
-    })
-    glowGrad.Parent = glowStroke
+
     local avatarHolder = Instance.new("Frame")
-    avatarHolder.Size              = UDim2.fromOffset(34, 34)
-    avatarHolder.Position          = UDim2.fromOffset(9, 9)
-    avatarHolder.BackgroundColor3  = Color3.fromRGB(40, 40, 45)
-    avatarHolder.BorderSizePixel   = 0
-    avatarHolder.ZIndex            = 2
-    avatarHolder.Parent            = root
+    avatarHolder.Size             = UDim2.fromOffset(34, 34)
+    avatarHolder.Position         = UDim2.fromOffset(9, 9)
+    avatarHolder.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+    avatarHolder.BorderSizePixel  = 0
+    avatarHolder.ZIndex           = 2
+    avatarHolder.Parent           = root
     local avCr = Instance.new("UICorner")
     avCr.CornerRadius = UDim.new(1, 0)
     avCr.Parent = avatarHolder
     local avRing = Instance.new("UIStroke")
-    avRing.Thickness = 1
-    avRing.Color = C.Accent
-    avRing.Transparency = 0.4
+    avRing.Thickness       = 1
+    avRing.Color           = N3_TAG_OUTLINE_COLOR
+    avRing.Transparency    = 0.4
     avRing.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     avRing.Parent = avatarHolder
+
     local avatar = Instance.new("ImageLabel")
-    avatar.Name                = "TagAvatar"
     avatar.Image                = ""
     avatar.BackgroundTransparency = 1
     avatar.Size                 = UDim2.fromOffset(28, 28)
     avatar.Position             = UDim2.fromOffset(3, 3)
     avatar.ScaleType            = Enum.ScaleType.Crop
-    avatar.ImageColor3          = Color3.fromRGB(255, 255, 255)
     avatar.ZIndex               = 3
     avatar.Parent               = avatarHolder
     local avClip = Instance.new("UICorner")
     avClip.CornerRadius = UDim.new(1, 0)
     avClip.Parent = avatar
-    local onlineRing = Instance.new("Frame")
-    onlineRing.AnchorPoint            = Vector2.new(1, 1)
-    onlineRing.Position               = UDim2.new(1, -1, 1, -1)
-    onlineRing.Size                   = UDim2.fromOffset(11, 11)
-    onlineRing.BackgroundColor3       = Color3.fromRGB(22, 22, 26)
-    onlineRing.BorderSizePixel        = 0
-    onlineRing.ZIndex                 = 4
-    onlineRing.Parent                 = avatarHolder
-    local orCr = Instance.new("UICorner")
-    orCr.CornerRadius = UDim.new(1, 0)
-    orCr.Parent = onlineRing
-    local onlineDot = Instance.new("Frame")
-    onlineDot.AnchorPoint            = Vector2.new(0.5, 0.5)
-    onlineDot.Position               = UDim2.fromScale(0.5, 0.5)
-    onlineDot.Size                   = UDim2.fromOffset(6, 6)
-    onlineDot.BackgroundColor3       = Color3.fromRGB(70, 200, 120)
-    onlineDot.BorderSizePixel        = 0
-    onlineDot.ZIndex                 = 5
-    onlineDot.Parent                 = onlineRing
-    local odCr = Instance.new("UICorner")
-    odCr.CornerRadius = UDim.new(1, 0)
-    odCr.Parent = onlineDot
+
     local divider = Instance.new("Frame")
     divider.Size             = UDim2.fromOffset(1, 30)
     divider.Position         = UDim2.fromOffset(51, 11)
@@ -655,10 +612,12 @@ local function buildTagFrame(player)
     divider.BorderSizePixel  = 0
     divider.ZIndex           = 2
     divider.Parent           = root
-    local textX      = 60
-    local badgeW     = 46
-    local badgePadR  = 9
-    local textWidth  = TAG_W - textX - badgeW - badgePadR - 6
+
+    local textX     = 60
+    local badgeW    = 46
+    local badgePadR = 9
+    local textWidth = N3_TAG_W - textX - badgeW - badgePadR - 6
+
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Text           = player.DisplayName
     nameLabel.Font           = Enum.Font.GothamBold
@@ -671,6 +630,7 @@ local function buildTagFrame(player)
     nameLabel.TextTruncate   = Enum.TextTruncate.AtEnd
     nameLabel.ZIndex         = 2
     nameLabel.Parent         = root
+
     local userLabel = Instance.new("TextLabel")
     userLabel.Text           = "@" .. player.Name
     userLabel.Font           = Enum.Font.Gotham
@@ -683,11 +643,12 @@ local function buildTagFrame(player)
     userLabel.TextTruncate   = Enum.TextTruncate.AtEnd
     userLabel.ZIndex         = 2
     userLabel.Parent         = root
+
     local badge = Instance.new("Frame")
     badge.Size             = UDim2.fromOffset(badgeW, 16)
     badge.AnchorPoint      = Vector2.new(1, 1)
     badge.Position         = UDim2.new(1, -badgePadR, 1, -9)
-    badge.BackgroundColor3 = C.Accent
+    badge.BackgroundColor3 = N3_TAG_OUTLINE_COLOR
     badge.BackgroundTransparency = 0.82
     badge.BorderSizePixel  = 0
     badge.ZIndex           = 2
@@ -696,22 +657,24 @@ local function buildTagFrame(player)
     badgeCorner.CornerRadius = UDim.new(1, 0)
     badgeCorner.Parent = badge
     local badgeStroke = Instance.new("UIStroke")
-    badgeStroke.Thickness = 0.6
-    badgeStroke.Color = C.Accent
-    badgeStroke.Transparency = 0.4
+    badgeStroke.Thickness       = 0.6
+    badgeStroke.Color           = N3_TAG_OUTLINE_COLOR
+    badgeStroke.Transparency    = 0.4
     badgeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    badgeStroke.Parent = badge
+    badgeStroke.Parent          = badge
+
     local badgeLabel = Instance.new("TextLabel")
-    badgeLabel.Text              = "Oxide"
-    badgeLabel.Font              = Enum.Font.GothamBold
-    badgeLabel.TextSize          = 8
-    badgeLabel.TextColor3        = Color3.fromRGB(222, 236, 253)
+    badgeLabel.Text           = "N3mogg"
+    badgeLabel.Font           = Enum.Font.GothamBold
+    badgeLabel.TextSize       = 8
+    badgeLabel.TextColor3     = Color3.fromRGB(222, 236, 253)
     badgeLabel.BackgroundTransparency = 1
-    badgeLabel.Size              = UDim2.fromScale(1, 1)
-    badgeLabel.TextXAlignment    = Enum.TextXAlignment.Center
-    badgeLabel.TextYAlignment    = Enum.TextYAlignment.Center
-    badgeLabel.ZIndex            = 3
-    badgeLabel.Parent            = badge
+    badgeLabel.Size           = UDim2.fromScale(1, 1)
+    badgeLabel.TextXAlignment = Enum.TextXAlignment.Center
+    badgeLabel.TextYAlignment = Enum.TextYAlignment.Center
+    badgeLabel.ZIndex         = 3
+    badgeLabel.Parent         = badge
+
     task.spawn(function()
         local ok, img = pcall(function()
             return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
@@ -720,32 +683,35 @@ local function buildTagFrame(player)
             avatar.Image = img
         end
     end)
+
     return root, glowGrad, fadeOverlay
 end
-local TAG_OUTLINE_COLOR = Color3.fromRGB(167, 200, 244)
+
 local function applyOutline(player)
     if player == Players.LocalPlayer then return nil end
     local char = player.Character
     if not char then return nil end
-    local existing = char:FindFirstChild("OxideOutline")
+    local existing = char:FindFirstChild("N3Outline")
     if existing then existing:Destroy() end
     local hl = Instance.new("Highlight")
-    hl.Name             = "OxideOutline"
-    hl.FillColor        = Color3.fromRGB(0, 0, 0)
-    hl.FillTransparency = 1
-    hl.OutlineColor     = TAG_OUTLINE_COLOR
+    hl.Name                = "N3Outline"
+    hl.FillColor           = Color3.fromRGB(0, 0, 0)
+    hl.FillTransparency    = 1
+    hl.OutlineColor        = N3_TAG_OUTLINE_COLOR
     hl.OutlineTransparency = 0
-    hl.Adornee          = char
-    hl.DepthMode        = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent           = char
+    hl.Adornee             = char
+    hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent              = char
     return hl
 end
+
 local function clearOutline(player)
     local char = player.Character
     if not char then return end
-    local existing = char:FindFirstChild("OxideOutline")
+    local existing = char:FindFirstChild("N3Outline")
     if existing then existing:Destroy() end
 end
+
 local function removeTag(player)
     local data = TagSystem._tags[player]
     if data then
@@ -756,24 +722,19 @@ local function removeTag(player)
         TagSystem._tags[player] = nil
     end
 end
+
 local function addTag(player)
     if player == Players.LocalPlayer then return end
     if TagSystem._tags[player] then return end
     local frame, glowGrad, fadeOverlay = buildTagFrame(player)
-    local glowT = 0
-    local currentFade = 0
-    local function refreshOutline()
-        local char = player.Character
-        if not char then return end
-        local existing = char:FindFirstChild("OxideOutline")
-        if not existing then applyOutline(player) end
-    end
-    refreshOutline()
-    local charConn
-    charConn = player.CharacterAdded:Connect(function()
+    local glowT, currentFade = 0, 0
+    applyOutline(player)
+
+    local charConn = player.CharacterAdded:Connect(function()
         task.wait(0.2)
         applyOutline(player)
     end)
+
     local conn = RunService.RenderStepped:Connect(function(dt)
         if not frame or not frame.Parent then return end
         local char = player.Character
@@ -782,12 +743,12 @@ local function addTag(player)
             frame.Visible = false
             return
         end
-        local outline = char:FindFirstChild("OxideOutline")
+        local outline = char:FindFirstChild("N3Outline")
         if not outline then outline = applyOutline(player) end
         local camera = Workspace.CurrentCamera
         if not camera then frame.Visible = false; return end
         local cameraPos = camera.CFrame.Position
-        local anchorWorld = hrp.Position + Vector3.new(0, TAG_WORLD_HEIGHT, 0)
+        local anchorWorld = hrp.Position + Vector3.new(0, N3_TAG_WORLD_HEIGHT, 0)
         local distance = (anchorWorld - cameraPos).Magnitude
         local screenPos, onScreen = camera:WorldToScreenPoint(anchorWorld)
         if not onScreen or screenPos.Z <= 0 then
@@ -796,8 +757,8 @@ local function addTag(player)
             return
         end
         local targetFade = 0
-        if distance > TAG_FULL_DIST then
-            targetFade = math.clamp((distance - TAG_FULL_DIST) / (TAG_MAX_DISTANCE - TAG_FULL_DIST), 0, 1)
+        if distance > N3_TAG_FULL_DIST then
+            targetFade = math.clamp((distance - N3_TAG_FULL_DIST) / (N3_TAG_MAX_DISTANCE - N3_TAG_FULL_DIST), 0, 1)
         end
         currentFade = currentFade + (targetFade - currentFade) * math.clamp(dt * 6, 0, 1)
         if currentFade > 0.98 then
@@ -806,7 +767,7 @@ local function addTag(player)
             return
         end
         frame.Visible = true
-        frame.Size = UDim2.fromOffset(TAG_W, TAG_H)
+        frame.Size = UDim2.fromOffset(N3_TAG_W, N3_TAG_H)
         if fadeOverlay and fadeOverlay.Parent then
             fadeOverlay.BackgroundTransparency = 1 - currentFade
         end
@@ -819,13 +780,14 @@ local function addTag(player)
             outline.Enabled = true
             local pulse = math.sin(glowT * math.pi)
             local sharp = pulse * pulse
-            local r = 100  + (255 - 100)  * sharp
+            local r = 100 + (255 - 100) * sharp
             local g = 50  + (255 - 50)  * sharp
             local b = 200 + (255 - 200) * sharp
             outline.OutlineColor = Color3.fromRGB(math.floor(r), math.floor(g), math.floor(b))
             outline.OutlineTransparency = currentFade * 0.85
         end
     end)
+
     TagSystem._tags[player] = {
         frame = frame,
         glowGrad = glowGrad,
@@ -834,35 +796,26 @@ local function addTag(player)
         charConn = charConn,
     }
 end
+
 local function getExecutorName()
     local probes = {
-        function()
-            if type(identifyexecutor) == "function" then return identifyexecutor() end
-        end,
-        function()
-            if type(getexecutorname) == "function" then return getexecutorname() end
-        end,
-        function()
-            if type(getexecutor) == "function" then return getexecutor() end
-        end,
-        function()
-            if type(identifyexecutor) == "string" then return identifyexecutor end
-        end,
+        function() if type(identifyexecutor) == "function" then return identifyexecutor() end end,
+        function() if type(getexecutorname) == "function" then return getexecutorname() end end,
+        function() if type(getexecutor) == "function" then return getexecutor() end end,
     }
     for _, probe in ipairs(probes) do
         local ok, name = pcall(probe)
-        if ok and type(name) == "string" then
-            local trimmed = name
-            if #trimmed > 0 then return string.sub(trimmed, 1, 64) end
+        if ok and type(name) == "string" and #name > 0 then
+            return string.sub(name, 1, 64)
         end
     end
     return "Unknown"
 end
+
 local function tagRegister()
     if not httpRequest then return end
     local lp = Players.LocalPlayer
     if not lp then return end
-    local payload
     local pok, encoded = pcall(function()
         return HttpService:JSONEncode({
             userId      = lp.UserId,
@@ -873,57 +826,33 @@ local function tagRegister()
             executor    = getExecutorName(),
         })
     end)
-    if pok and encoded then
-        payload = encoded
-    else
-        payload = '{"userId":' .. lp.UserId .. '}'
-    end
-    local ok, res = pcall(function()
-        return httpRequest({
-            Url    = TAG_REGISTER,
-            Method = "POST",
+    if not pok or not encoded then return end
+    pcall(function()
+        httpRequest({
+            Url     = N3_TAG_REGISTER,
+            Method  = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body   = payload,
+            Body    = encoded,
         })
     end)
-    if not ok or not res or not res.Body then return end
-    local sok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-    if sok and type(data) == "table" and data.kick == true then
-        pcall(function() lp:Kick("[Oxide] Disconnected by admin") end)
-    end
 end
+
 local function tagFetchAndUpdate()
     if not httpRequest then return end
     local ok, res = pcall(function()
-        return httpRequest({ Url = TAG_USERS, Method = "GET" })
+        return httpRequest({ Url = N3_TAG_USERS, Method = "GET" })
     end)
     if not ok or not res or not res.Body then return end
-    local sok, data = pcall(function()
-        return HttpService:JSONDecode(res.Body)
-    end)
+    local sok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
     if not sok or type(data) ~= "table" then return end
-    local active, userInfo = {}, {}
+
+    local active = {}
     for _, entry in ipairs(data) do
-        local id
-        if type(entry) == "number" then
-            id = entry
-            userInfo[id] = { userId = id, displayName = "", name = "" }
-        elseif type(entry) == "table" then
-            id = tonumber(entry.userId)
-            if id then
-                userInfo[id] = {
-                    userId      = id,
-                    displayName = tostring(entry.displayName or ""),
-                    name        = tostring(entry.name or ""),
-                    jobId       = tostring(entry.jobId or ""),
-                    placeId     = tonumber(entry.placeId) or 0,
-                }
-            end
-        end
+        local id = tonumber(entry.userId)
         if id then active[id] = true end
     end
-    TagSystem._active   = active
-    TagSystem._userInfo = userInfo
+    TagSystem._active = active
+
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= Players.LocalPlayer then
             if active[player.UserId] then
@@ -933,10 +862,8 @@ local function tagFetchAndUpdate()
             end
         end
     end
-    for _, fn in ipairs(TagSystem._listeners) do
-        task.spawn(function() pcall(fn, userInfo, active) end)
-    end
 end
+
 local function startTagSystem()
     if TagSystem._running then return end
     TagSystem._running = true
@@ -949,10 +876,11 @@ local function startTagSystem()
         while TagSystem._running do
             tagRegister()
             tagFetchAndUpdate()
-            task.wait(18)
+            task.wait(15)
         end
     end)
 end
+
 local function stopTagSystem()
     TagSystem._running = false
     for _, conn in ipairs(TagSystem._connections) do
@@ -969,7 +897,6 @@ local function stopTagSystem()
     end
     TagSystem._screenGui = nil
 end
-
 local Library = {
     Version       = "2.6",
     ChatFree      = true,
@@ -979,7 +906,7 @@ local Library = {
     Flags         = {},
     State         = {},
     _stateListeners = {},
-    ConfigFolder  = "OxideUI/configs",
+    ConfigFolder  = "N3moggUI/configs",
     _windows      = {},
     _windowObjects= {},
     _currentTheme = "Dark",
@@ -1060,14 +987,14 @@ function Library:SetTheme(theme)
     if type(theme) == "string" then
         themeName = theme
         theme = THEMES[theme]
-        if not theme then warn(("[Oxide UI] unknown theme %q"):format(themeName)); return false end
+        if not theme then warn(("[N3mogg UI] unknown theme %q"):format(themeName)); return false end
     elseif type(theme) ~= "table" then
-        warn("[Oxide UI] SetTheme expects a built-in theme name or theme table"); return false
+        warn("[N3mogg UI] SetTheme expects a built-in theme name or theme table"); return false
     end
     for key in pairs(C) do
         local value = theme[key]
         if value ~= nil and typeof(value) ~= "Color3" then
-            warn(("[Oxide UI] theme key %s must be a Color3"):format(key)); return false
+            warn(("[N3mogg UI] theme key %s must be a Color3"):format(key)); return false
         end
     end
     for key in pairs(C) do
@@ -1197,22 +1124,22 @@ end
 
 function Library:SaveConfig(name)
     if not hasFileApi() then
-        warn("[Oxide UI] SaveConfig requires an executor file API (writefile)")
+        warn("[N3mogg UI] SaveConfig requires an executor file API (writefile)")
         return false
     end
     ensureConfigFolder()
     local ok, encoded = pcall(function()
         return HttpService:JSONEncode(Library:GetConfig())
     end)
-    if not ok then warn("[Oxide UI] SaveConfig failed to encode config"); return false end
+    if not ok then warn("[N3mogg UI] SaveConfig failed to encode config"); return false end
     local wrote = pcall(writefile, configPath(name), encoded)
-    if not wrote then warn("[Oxide UI] SaveConfig failed to write file"); return false end
+    if not wrote then warn("[N3mogg UI] SaveConfig failed to write file"); return false end
     return true
 end
 
 function Library:LoadConfig(name)
     if not hasFileApi() then
-        warn("[Oxide UI] LoadConfig requires an executor file API (readfile)")
+        warn("[N3mogg UI] LoadConfig requires an executor file API (readfile)")
         return false
     end
     local path = configPath(name)
@@ -1220,7 +1147,7 @@ function Library:LoadConfig(name)
     local ok, raw = pcall(readfile, path)
     if not ok or not raw then return false end
     local decoded, data = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not decoded then warn("[Oxide UI] LoadConfig failed to decode config"); return false end
+    if not decoded then warn("[N3mogg UI] LoadConfig failed to decode config"); return false end
     return Library:LoadConfigData(data)
 end
 
@@ -1251,54 +1178,13 @@ function Library:Notify(opts)
             return window:Notify(opts)
         end
     end
-    warn("[Oxide UI] create a window before calling Library:Notify")
+    warn("[N3mogg UI] create a window before calling Library:Notify")
     return nil
 end
 function Library:Notification(opts) return self:Notify(opts) end
 
-function Library:AdminDisconnect(userId)
-    if not httpRequest then return false, "no HTTP request function" end
-    local lp = Players.LocalPlayer
-    if not lp then return false, "no LocalPlayer" end
-    userId = tonumber(userId)
-    if not userId then return false, "invalid userId" end
-
-    local pok, body = pcall(function()
-        return HttpService:JSONEncode({ adminId = lp.UserId, userId = userId })
-    end)
-    if not pok or not body then return false, "encode failed" end
-
-    local ok, res = pcall(function()
-        return httpRequest({
-            Url     = TAG_ADMIN_DISCONNECT,
-            Method  = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body    = body,
-        })
-    end)
-    if not ok or not res then return false, "request failed" end
-
-    local status = tonumber(res.StatusCode) or 0
-    if status >= 200 and status < 300 then return true end
-    if status == 403 then return false, "not authorized" end
-    return false, ("server returned " .. tostring(status))
-end
-
-function Library:JoinPlayer(placeId, jobId)
-    local ts = game:GetService("TeleportService")
-    placeId = tonumber(placeId)
-    if not placeId or placeId <= 0 then return false, "target has no place info" end
-    if not jobId or tostring(jobId) == "" then return false, "target has no server info" end
-
-    local ok, err = pcall(function()
-        ts:TeleportToPlaceInstance(placeId, tostring(jobId), Players.LocalPlayer)
-    end)
-    if not ok then return false, tostring(err) end
-    return true
-end
-
 function Library:IsAdmin()
-    return isAdminUser(Players.LocalPlayer)
+    return false
 end
 
 function Library:DestroyAll()
@@ -1331,7 +1217,7 @@ local function buildMusicPlayer(cfg)
     local CLOSE_RED_HI   = Color3.fromRGB(212, 80, 80)
     local MIN_YELLOW     = Color3.fromRGB(255, 195, 0)
     local MIN_YELLOW_HI  = Color3.fromRGB(255, 211, 70)
-    local MUSIC_FOLDER   = tostring(opts.MusicFolder or "OxideMusic")
+    local MUSIC_FOLDER   = tostring(opts.MusicFolder or "N3moggMusic")
     local musicWidth     = profileWidth
     local fullHeight     = 384
     local compactHeight  = 190
@@ -1343,7 +1229,7 @@ local function buildMusicPlayer(cfg)
 
     local SoundService = game:GetService("SoundService")
     local musicSound   = Instance.new("Sound")
-    musicSound.Name   = "OxideMusicPlayer"
+    musicSound.Name   = "N3moggMusicPlayer"
     musicSound.Volume = 0.5
     musicSound.Looped = false
     pcall(function() musicSound.Parent = SoundService end)
@@ -1540,7 +1426,7 @@ local function buildMusicPlayer(cfg)
         end
     end
     local BUILTIN_TRACKS = {
-        { name = "Oxide Anthem", id = "rbxassetid://75485931767123", startTime = 3, endTime = 115 },
+        { name = "N3mogg Anthem", id = "rbxassetid://75485931767123", startTime = 3, endTime = 115 },
         { name = "Lofi Chill Beats", id = "rbxassetid://9043887091" },
         { name = "Phonk Drift", id = "rbxassetid://9048375035" },
         { name = "Synthwave Glow", id = "rbxassetid://9048376510" },
@@ -1680,7 +1566,7 @@ function Library:CreateWindow(opts)
     local logoZoom       = math.clamp(tonumber(opts.LogoZoom) or (logoAsset == DEFAULT_LOGO and 2.4 or 1), 1, 6)
     local windowSize     = opts.Size or UDim2.fromOffset(700, 490)
     local windowPosition = opts.Position or UDim2.fromScale(0.5, 0.5)
-    local guiName        = opts.GuiName or "OxideUI"
+    local guiName        = opts.GuiName or "N3moggUI"
 
     local function detectMobile()
         local platform = nil
@@ -1729,7 +1615,7 @@ function Library:CreateWindow(opts)
     local containerH = windowSize.Y.Offset + HOTBAR_GAP + HOTBAR_HEIGHT
 
     local container = make("Frame", {
-        Name = "OxideContainer",
+        Name = "N3moggContainer",
         Size = UDim2.fromOffset(containerW, containerH),
         Position = windowPosition,
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1741,9 +1627,9 @@ function Library:CreateWindow(opts)
 
     local loadingEnabled      = opts.LoadingAnimation ~= false
     local loadingDuration     = math.clamp(tonumber(opts.LoadingDuration) or 1.2, 0.4, 8)
-    local loadingText         = tostring(opts.LoadingText or opts.Name or "Oxide")
+    local loadingText         = tostring(opts.LoadingText or opts.Name or "N3mogg")
     local loadingSub          = tostring(opts.LoadingSubtitle or "HUB")
-    local loadingFooter       = tostring(opts.LoadingFooter or "Oxide HUB")
+    local loadingFooter       = tostring(opts.LoadingFooter or "N3mogg HUB")
     local overlayTransparency = math.clamp(tonumber(opts.LoadingOverlayTransparency) or 0.35, 0, 0.9)
 
     local ACC       = C.Accent
@@ -2186,8 +2072,8 @@ function Library:CreateWindow(opts)
     brandShimmerGradient:SetAttribute("ThemeGradient_Edge", "Accent")
     local logoHolder = make("Frame", { Position=UDim2.fromOffset(9,9), Size=UDim2.fromOffset(46,46), BackgroundTransparency=1, ClipsDescendants=true, Parent=brand })
     local brandLogo = make("ImageLabel",{Name="Logo",Image=logoAsset,BackgroundTransparency=1,AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),Size=UDim2.fromScale(logoZoom,logoZoom),ScaleType=Enum.ScaleType.Fit,Parent=logoHolder})
-    make("TextLabel",{Text=opts.Name or "Oxide UI",Font=Enum.Font.GothamBold,TextSize=13,TextColor3=C.White,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,16),Size=UDim2.new(1,-72,0,17),Parent=brand})
-    make("TextLabel",{Text=opts.BrandSubtitle or ("Oxide FREE..."..Library.Version),Font=Enum.Font.GothamMedium,TextSize=9,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,35),Size=UDim2.new(1,-72,0,13),Parent=brand})
+    make("TextLabel",{Text=opts.Name or "N3mogg UI",Font=Enum.Font.GothamBold,TextSize=13,TextColor3=C.White,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,16),Size=UDim2.new(1,-72,0,17),Parent=brand})
+    make("TextLabel",{Text=opts.BrandSubtitle or ("N3mogg FREE..."..Library.Version),Font=Enum.Font.GothamMedium,TextSize=9,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,BackgroundTransparency=1,Position=UDim2.fromOffset(64,35),Size=UDim2.new(1,-72,0,13),Parent=brand})
 
     local lp = Players.LocalPlayer
     local pcard = make("Frame",{Name="PlayerCard",Position=UDim2.fromOffset(12,88),Size=UDim2.new(1,-24,0,52),BackgroundColor3=C.CardBg,Parent=sidebar})
@@ -2255,7 +2141,7 @@ function Library:CreateWindow(opts)
 
     local statusDot = make("Frame",{AnchorPoint=Vector2.new(0,0.5),Position=UDim2.new(0,16,1,-19),Size=UDim2.fromOffset(6,6),BackgroundColor3=NOTIFICATION_STYLES.success.Color,Parent=sidebar})
     circle(statusDot)
-    make("TextLabel",{Text=opts.StatusText or "Oxide is ready",Font=Enum.Font.GothamMedium,TextSize=10,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,BackgroundTransparency=1,Position=UDim2.new(0,28,1,-27),Size=UDim2.new(1,-40,0,16),Parent=sidebar})
+    make("TextLabel",{Text=opts.StatusText or "N3mogg is ready",Font=Enum.Font.GothamMedium,TextSize=10,TextColor3=C.TextDim,TextXAlignment=Enum.TextXAlignment.Left,BackgroundTransparency=1,Position=UDim2.new(0,28,1,-27),Size=UDim2.new(1,-40,0,16),Parent=sidebar})
     local divLine=make("Frame",{Position=UDim2.fromOffset(190,0),Size=UDim2.new(0,1,1,0),BackgroundColor3=C.Accent,Parent=main})
     make("UIGradient",{Rotation=90,Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(0.5,0.5),NumberSequenceKeypoint.new(1,1)}),Parent=divLine})
     local content = make("Frame",{Position=UDim2.fromOffset(191,0),Size=UDim2.new(1,-191,1,0),BackgroundTransparency=1,Parent=main})
@@ -2485,176 +2371,6 @@ function Library:CreateWindow(opts)
         conns = musicConns, opts = opts,
     })
 
-    local adminPanel
-    local adminListener
-    local setAdminVisible
-    local adminEnabled = isAdminUser(localPlayer)
-
-    if adminEnabled then
-        local adminWidth        = math.max(320, tonumber(opts.AdminPanelWidth) or 368)
-        local adminHeight       = math.max(280, tonumber(opts.AdminPanelHeight) or 416)
-        local adminOpenPos      = UDim2.new(0, 18, 1, -bottomMargin)
-        local adminClosedPos    = UDim2.new(0, -(adminWidth + 28), 1, -bottomMargin)
-
-        adminPanel = make("CanvasGroup", {
-            Name = "AdminPanel", AnchorPoint = Vector2.new(0, 1),
-            Position = adminClosedPos, Size = UDim2.fromOffset(adminWidth, adminHeight),
-            BackgroundColor3 = C.CardBg, GroupTransparency = 1,
-            ClipsDescendants = true, ZIndex = 150, Parent = screenGui,
-        })
-        corner(adminPanel, 14)
-        local adminHeader = make("Frame", { Size = UDim2.new(1, 0, 0, 65), BackgroundTransparency = 1, ZIndex = 151, Parent = adminPanel })
-        make("TextLabel", { Text = "ADMIN PANEL", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 13), Size = UDim2.new(1, -100, 0, 18), ZIndex = 152, Parent = adminHeader })
-        make("TextLabel", { Text = "Active client management", Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 34), Size = UDim2.new(1, -100, 0, 15), ZIndex = 152, Parent = adminHeader })
-        make("Frame", { Position = UDim2.new(0, 18, 1, -1), Size = UDim2.new(1, -36, 0, 1), BackgroundColor3 = C.Border, ZIndex = 151, Parent = adminHeader })
-        local liveBadge = make("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 14), Size = UDim2.fromOffset(64, 20), BackgroundColor3 = C.BadgeIdle, ZIndex = 152, Parent = adminHeader })
-        corner(liveBadge, 6)
-        make("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 9, 0.5, 0), Size = UDim2.fromOffset(5, 5), BackgroundColor3 = NOTIFICATION_STYLES.success.Color, ZIndex = 153, Parent = liveBadge })
-        make("TextLabel", { Text = "LIVE", Font = Enum.Font.GothamBold, TextSize = 8, TextColor3 = C.TextGray, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -24, 1, 0), ZIndex = 153, Parent = liveBadge })
-        local summaryCard = make("Frame", { Position = UDim2.fromOffset(16, 75), Size = UDim2.new(1, -32, 0, 56), BackgroundColor3 = C.Element, ZIndex = 151, Parent = adminPanel })
-        corner(summaryCard, 11); stroke(summaryCard, C.Border)
-        make("TextLabel", { Text = "ACTIVE CLIENTS", Font = Enum.Font.GothamBold, TextSize = 8, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(0.5, -12, 0, 11), ZIndex = 152, Parent = summaryCard })
-        local activeCountLabel = make("TextLabel", { Text = "0", Font = Enum.Font.GothamBold, TextSize = 23, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 21), Size = UDim2.new(0.5, -12, 0, 28), ZIndex = 152, Parent = summaryCard })
-        make("TextLabel", { Text = "ADMIN UID", Font = Enum.Font.GothamBold, TextSize = 8, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Right, BackgroundTransparency = 1, Position = UDim2.new(0.5, 0, 0, 8), Size = UDim2.new(0.5, -12, 0, 11), ZIndex = 152, Parent = summaryCard })
-        make("TextLabel", { Text = localPlayer and tostring(localPlayer.UserId) or "N/A", Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Right, BackgroundTransparency = 1, Position = UDim2.new(0.5, 0, 0, 26), Size = UDim2.new(0.5, -12, 0, 18), ZIndex = 152, Parent = summaryCard })
-        make("TextLabel", { Text = "CLIENT LIST", Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(18, 142), Size = UDim2.fromOffset(140, 14), ZIndex = 151, Parent = adminPanel })
-        local refreshAdminBtn = make("TextButton", { Text = "", AutoButtonColor = false, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -16, 0, 149), Size = UDim2.fromOffset(22, 22), BackgroundColor3 = C.Element, ZIndex = 151, Parent = adminPanel })
-        corner(refreshAdminBtn, 7); stroke(refreshAdminBtn, C.Border)
-        local refreshAdminIcon = make("ImageLabel", { Image = ICONS.refresh, ImageColor3 = C.TextGray, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(13, 13), ZIndex = 152, Parent = refreshAdminBtn })
-        refreshAdminBtn.MouseEnter:Connect(function() tween(refreshAdminBtn, { BackgroundColor3 = C.ElementHover }); tween(refreshAdminIcon, { ImageColor3 = C.White }) end)
-        refreshAdminBtn.MouseLeave:Connect(function() tween(refreshAdminBtn, { BackgroundColor3 = C.Element }); tween(refreshAdminIcon, { ImageColor3 = C.TextGray }) end)
-        table.insert(noDrag, refreshAdminBtn)
-        local listFrame = make("ScrollingFrame", { Position = UDim2.fromOffset(16, 168), Size = UDim2.new(1, -32, 1, -184), BackgroundColor3 = C.Element, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Border, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 151, Parent = adminPanel })
-        corner(listFrame, 11); stroke(listFrame, C.Border); pad(listFrame, 6, 6, 6, 6)
-        make("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, Parent = listFrame })
-        table.insert(noDrag, listFrame)
-        local emptyLabel = make("TextLabel", { Text = "No active clients", Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Center, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 168 + ((adminHeight - 184) / 2)), Size = UDim2.fromOffset(adminWidth - 64, 22), ZIndex = 152, Parent = adminPanel })
-        local adminRows = {}
-        local function buildRow(info, order)
-            local userId = info.userId
-            local isSelf = (localPlayer and userId == localPlayer.UserId) or false
-            local displayName = (info.displayName ~= nil and info.displayName ~= "") and info.displayName or ("User " .. tostring(userId))
-            local handle = (info.name ~= nil and info.name ~= "") and ("@" .. info.name) or "@unknown"
-            local row = make("Frame", { Size = UDim2.new(1, 0, 0, 50), BackgroundColor3 = C.WindowBg, LayoutOrder = order, ZIndex = 152, Parent = listFrame })
-            corner(row, 9); stroke(row, C.Border)
-            local avH = make("Frame", { Position = UDim2.fromOffset(7, 7), Size = UDim2.fromOffset(36, 36), BackgroundColor3 = C.Element, ZIndex = 153, Parent = row })
-            corner(avH, 8)
-            local avImg = make("ImageLabel", { Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=150&h=150", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ZIndex = 154, Parent = avH })
-            corner(avImg, 8)
-            if isSelf then local ring = stroke(avH, C.Accent); ring.Transparency = 0.3 end
-            local actionW = isSelf and 60 or 128
-            local textRight = actionW + 18
-            make("TextLabel", { Text = isSelf and (displayName .. "  (you)") or displayName, Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(51, 6), Size = UDim2.new(1, -(51 + textRight), 0, 14), ZIndex = 153, Parent = row })
-            make("TextLabel", { Text = handle, Font = Enum.Font.Gotham, TextSize = 10, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, BackgroundTransparency = 1, Position = UDim2.fromOffset(51, 21), Size = UDim2.new(1, -(51 + textRight), 0, 12), ZIndex = 153, Parent = row })
-            make("TextLabel", { Text = "ID " .. tostring(userId), Font = Enum.Font.GothamMedium, TextSize = 9, TextColor3 = C.TextDim, TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Position = UDim2.fromOffset(51, 34), Size = UDim2.new(1, -(51 + textRight), 0, 11), ZIndex = 153, Parent = row })
-            if isSelf then
-                local selfBadge = make("Frame", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(54, 22), BackgroundColor3 = C.Badge, ZIndex = 153, Parent = row })
-                corner(selfBadge, 6)
-                make("TextLabel", { Text = "YOU", Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = C.Accent, TextXAlignment = Enum.TextXAlignment.Center, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 154, Parent = selfBadge })
-            else
-                local CLOSE_RED    = Color3.fromRGB(190, 60, 60)
-                local CLOSE_RED_HI = Color3.fromRGB(212, 80, 80)
-                local JOIN_GREEN    = Color3.fromRGB(60, 158, 90)
-                local JOIN_GREEN_HI = Color3.fromRGB(80, 178, 108)
-                local joinBtn = make("TextButton", { Text = "JOIN", Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Color3.fromRGB(255, 255, 255), AutoButtonColor = false, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -94, 0.5, 0), Size = UDim2.fromOffset(44, 24), BackgroundColor3 = JOIN_GREEN, ZIndex = 153, Parent = row })
-                corner(joinBtn, 6)
-                joinBtn.MouseEnter:Connect(function() tween(joinBtn, { BackgroundColor3 = JOIN_GREEN_HI }) end)
-                joinBtn.MouseLeave:Connect(function() tween(joinBtn, { BackgroundColor3 = JOIN_GREEN }) end)
-                joinBtn.MouseButton1Click:Connect(function()
-                    if joinBtn:GetAttribute("Busy") then return end
-                    joinBtn:SetAttribute("Busy", true); joinBtn.Text = "..."
-                    task.spawn(function()
-                        local ok, err = Library:JoinPlayer(info.placeId, info.jobId)
-                        if not ok then
-                            joinBtn.Text = "JOIN"; joinBtn:SetAttribute("Busy", nil)
-                            if windowRef and windowRef.Notify then
-                                windowRef:Notify({ Title = "Join", Content = "Can't join " .. displayName .. ": " .. tostring(err), Type = "error", Duration = 5 })
-                            end
-                        end
-                    end)
-                end)
-                table.insert(noDrag, joinBtn)
-                local dcBtn = make("TextButton", { Text = "DISCONNECT", Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Color3.fromRGB(255, 255, 255), AutoButtonColor = false, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(78, 24), BackgroundColor3 = CLOSE_RED, ZIndex = 153, Parent = row })
-                corner(dcBtn, 6)
-                dcBtn.MouseEnter:Connect(function() tween(dcBtn, { BackgroundColor3 = CLOSE_RED_HI }) end)
-                dcBtn.MouseLeave:Connect(function() tween(dcBtn, { BackgroundColor3 = CLOSE_RED }) end)
-                dcBtn.MouseButton1Click:Connect(function()
-                    if dcBtn:GetAttribute("Busy") then return end
-                    dcBtn:SetAttribute("Busy", true); dcBtn.Text = "..."
-                    task.spawn(function()
-                        local ok, err = Library:AdminDisconnect(userId)
-                        if ok then
-                            if windowRef and windowRef.Notify then
-                                windowRef:Notify({ Title = "Admin", Content = "Disconnect queued: " .. displayName, Type = "warning", Duration = 4 })
-                            end
-                            if row and row.Parent then row:Destroy() end
-                            adminRows[userId] = nil
-                        else
-                            dcBtn.Text = "DISCONNECT"; dcBtn:SetAttribute("Busy", nil)
-                            if windowRef and windowRef.Notify then
-                                windowRef:Notify({ Title = "Admin", Content = "Disconnect failed: " .. tostring(err), Type = "error", Duration = 5 })
-                            end
-                        end
-                    end)
-                end)
-                table.insert(noDrag, dcBtn)
-            end
-            return row
-        end
-        local adminIsOpen = false
-        local function refreshAdminList(userInfos)
-            userInfos = userInfos or TagSystem._userInfo or {}
-            local merged = {}
-            for id, info in pairs(userInfos) do merged[id] = info end
-            if localPlayer and not merged[localPlayer.UserId] then
-                merged[localPlayer.UserId] = { userId = localPlayer.UserId, displayName = localPlayer.DisplayName, name = localPlayer.Name }
-            end
-            local sorted = {}
-            for _, info in pairs(merged) do table.insert(sorted, info) end
-            table.sort(sorted, function(a, b)
-                local aSelf = localPlayer and a.userId == localPlayer.UserId
-                local bSelf = localPlayer and b.userId == localPlayer.UserId
-                if aSelf ~= bSelf then return aSelf end
-                local an = string.lower(tostring(a.displayName or ""))
-                local bn = string.lower(tostring(b.displayName or ""))
-                if an ~= bn then return an < bn end
-                return a.userId < b.userId
-            end)
-            activeCountLabel.Text = tostring(#sorted)
-            emptyLabel.Visible = (#sorted == 0)
-            if not adminIsOpen then return end
-            for uid, r in pairs(adminRows) do if r and r.Parent then r:Destroy() end end
-            table.clear(adminRows)
-            local MAX_ROWS = 30
-            for i = 1, math.min(#sorted, MAX_ROWS) do
-                local info = sorted[i]
-                local row = buildRow(info, i)
-                adminRows[info.userId] = row
-            end
-        end
-        refreshAdminBtn.MouseButton1Click:Connect(function()
-            tween(refreshAdminIcon, { Rotation = refreshAdminIcon.Rotation + 360 })
-            task.spawn(function() tagFetchAndUpdate(); pcall(refreshAdminList, TagSystem._userInfo) end)
-        end)
-        adminListener = TagSystem:OnUsersUpdated(function(userInfos)
-            if not adminPanel or not adminPanel.Parent then return end
-            task.spawn(function() pcall(refreshAdminList, userInfos) end)
-        end)
-        refreshAdminList(TagSystem._userInfo)
-        task.spawn(function() pcall(tagFetchAndUpdate) end)
-        function setAdminVisible(open, instant)
-            adminIsOpen = open == true
-            local pos = open and adminOpenPos or adminClosedPos
-            local tr  = open and 0 or 1
-            if instant then
-                adminPanel.Position = pos; adminPanel.GroupTransparency = tr
-            else
-                TweenService:Create(adminPanel, PROFILE_TWEEN, { Position = pos, GroupTransparency = tr }):Play()
-            end
-            if adminIsOpen then pcall(refreshAdminList, TagSystem._userInfo) end
-        end
-    end
-
     local function setProfileVisible(visible,instant)
         profileOpen=visible==true
         if not profileOpen and closeMusic then closeMusic(instant) end
@@ -2668,7 +2384,6 @@ function Library:CreateWindow(opts)
             TweenService:Create(profilePanel,PROFILE_TWEEN,{Position=tp,GroupTransparency=tr}):Play()
             TweenService:Create(performancePanel,PROFILE_TWEEN,{Position=ep,GroupTransparency=tr}):Play()
         end
-        if setAdminVisible then setAdminVisible(profileOpen, instant) end
         if windowRef then windowRef._profileOpen=profileOpen end; return profileOpen
     end
     if localPlayer then
@@ -2701,11 +2416,6 @@ function Library:CreateWindow(opts)
     windowRef.Notification=windowRef.Notify
     if dragConn then table.insert(windowRef._connections, dragConn) end
     for _,c in ipairs(musicConns) do table.insert(windowRef._connections, c) end
-    if adminListener then
-        table.insert(windowRef._connections, {
-            Disconnect = function() TagSystem:RemoveListener(adminListener) end,
-        })
-    end
     local function resolveHost()
         local host
         if typeof(opts.Parent) == "Instance" then host = opts.Parent
@@ -2753,7 +2463,7 @@ function Library:CreateWindow(opts)
     end
     local musicPanel = screenGui:FindFirstChild("MusicPlayer")
     local scaleList = {}
-    for _, inst in ipairs({ profilePanel, performancePanel, musicPanel, burgerButton, adminPanel }) do
+    for _, inst in ipairs({ profilePanel, performancePanel, musicPanel, burgerButton }) do
         local us = ensureScale(inst); if us then table.insert(scaleList, us) end
     end
     local userScale = tonumber(opts.Scale) or 1
@@ -2809,7 +2519,7 @@ function Library:CreateWindow(opts)
     windowRef._setUIVisible = setUIVisible
     if isMobile then
         local fab = make("TextButton", {
-            Name = "OxideMobileToggle", Text = "", AutoButtonColor = false,
+            Name = "N3moggMobileToggle", Text = "", AutoButtonColor = false,
             AnchorPoint = Vector2.new(0, 0), Position = UDim2.fromOffset(14, safeInset.Y + 14),
             Size = UDim2.fromOffset(46, 46), BackgroundColor3 = C.CardBg,
             ZIndex = 60, Parent = screenGui,
