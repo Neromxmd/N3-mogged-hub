@@ -626,7 +626,8 @@ VisualSub:AddToggle({ Name = "Fullbright", Default = false, Flag = "fullbright",
             Lighting.Brightness = savedLighting.Brightness; Lighting.ClockTime = savedLighting.ClockTime
             Lighting.FogEnd = savedLighting.FogEnd; Lighting.GlobalShadows = savedLighting.GlobalShadows
             Lighting.Ambient = savedLighting.Ambient
-        end    end })
+        end
+    end })
 local defaultFOV = Camera.FieldOfView
 VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
     Callback = function(v) Camera.FieldOfView = v end })
@@ -636,31 +637,23 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 
--- ── AUTO COLLECT COINS (Smooth, no pause, BodyVelocity) ──
+-- ── AUTO COLLECT COINS (Continuous, no pause) ──
 GameplaySub:AddSection("Auto Farm Coins")
 
 local autoCollect       = false
-local autoCollectSpeed  = 25      -- studs/sec (такая же, как ты задавал — безопасно)
+local autoCollectSpeed  = 25
 local autoCollectHeight = 5
-local autoCollectRange  = 4       -- радиус сбора
 local autoCollectNoclip = true
-local autoFarmStatus    = "Idle"
-
-local autoCollectStatusLabel = GameplaySub:AddParagraph({
-    Title = "Status",
-    Text = "Idle",
-})
 
 GameplaySub:AddToggle({
     Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
-    Description = "Летит к ближайшей монете, без пауз",
     Callback = function(v)
         autoCollect = v
         Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error")
     end,
 })
 GameplaySub:AddSlider({
-    Name = "Speed", Min = 10, Max = 60, Default = 25, Suffix = " studs/s",
+    Name = "Speed", Min = 15, Max = 60, Default = 25, Suffix = " studs/s",
     Flag = "auto_collect_speed",
     Callback = function(v) autoCollectSpeed = v end,
 })
@@ -674,26 +667,40 @@ GameplaySub:AddToggle({
     Callback = function(v) autoCollectNoclip = v end,
 })
 
--- ============ Автоферма ============
-local autoCollectConn = nil
-local autoCollectTarget = nil
-local autoCollectTargetScan = 0
-local autoCollectRunning = false
-local autoCollectBV = nil
+local autoCollectStatus = GameplaySub:AddParagraph({
+    Title = "Status",
+    Text = "Idle",
+})
 
-local function findNearestCoin()
-    local hrp = GetHRP()
-    if not hrp then return nil end
-    local myPos = hrp.Position
-    local best, bestDist = nil, math.huge
+local autoCollectRunning = false
+local autoCollectTween   = nil
+local autoCollectTarget  = nil
+
+-- Кеш монет
+local coinCache = {}
+local coinCacheTime = 0
+local COIN_CACHE_TTL = 0.5
+
+local function refreshCoinCache()
+    local newCache = {}
     for _, v in ipairs(Workspace:GetDescendants()) do
         if v:IsA("BasePart") and v.Parent and v.Transparency < 1
            and (v.Name == "Coin" or v.Name:lower():find("coin")) then
-            local ok, d = pcall(function() return (v.Position - myPos).Magnitude end)
-            if ok and d < bestDist then
-                best = v
-                bestDist = d
-            end
+            table.insert(newCache, v)
+        end
+    end
+    coinCache = newCache
+    coinCacheTime = tick()
+end
+
+local function findNearestCoinFromCache(hrp)
+    if not hrp then return nil end
+    local myPos = hrp.Position
+    local best, bestDist = nil, math.huge
+    for _, v in ipairs(coinCache) do
+        if v and v.Parent then
+            local d = (v.Position - myPos).Magnitude
+            if d < bestDist then best = v; bestDist = d end
         end
     end
     return best
@@ -710,100 +717,116 @@ end
 
 local function stopAutoCollect()
     autoCollectRunning = false
-    if autoCollectConn then autoCollectConn:Disconnect(); autoCollectConn = nil end
-    if autoCollectBV then pcall(function() autoCollectBV:Destroy() end); autoCollectBV = nil end
+    if autoCollectTween then pcall(function() autoCollectTween:Cancel() end); autoCollectTween = nil end
+    autoCollectTarget = nil
     local h = GetHumanoid()
     if h then h.PlatformStand = false end
     local hrp = GetHRP()
     if hrp then hrp.AssemblyLinearVelocity = Vector3.zero end
-    autoCollectStatusLabel:Set("Stopped")
+    autoCollectStatus:Set("Stopped")
 end
 
 local function startAutoCollect()
     if autoCollectRunning then return end
     autoCollectRunning = true
     autoCollectTarget = nil
-    autoCollectTargetScan = 0
+    refreshCoinCache()
 
-    local hrp0 = GetHRP()
-    if not hrp0 then return end
+    task.spawn(function()
+        while autoCollect and autoCollectRunning do
+            local hrp = GetHRP()
+            local hum = GetHumanoid()
+            if not hrp or not hum or hum.Health <= 0 then
+                autoCollectStatus:Set("Waiting for character...")
+                task.wait(1)
+                continue
+            end
 
-    if autoCollectBV then pcall(function() autoCollectBV:Destroy() end) end
-    autoCollectBV = Instance.new("BodyVelocity")
-    autoCollectBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-    autoCollectBV.Velocity = Vector3.zero
-    autoCollectBV.Parent = hrp0
+            if tick() - coinCacheTime > COIN_CACHE_TTL then
+                refreshCoinCache()
+            end
 
-    autoCollectConn = RunService.RenderStepped:Connect(function(dt)
-        if not autoCollect or not autoCollectRunning then return end
-        local hrp = GetHRP()
-        local hum = GetHumanoid()
-        if not hrp or not hum or hum.Health <= 0 then
-            autoCollectStatusLabel:Set("Waiting for character...")
-            return
-        end
+            if not autoCollectTarget or not autoCollectTarget.Parent then
+                autoCollectTarget = findNearestCoinFromCache(hrp)
+            end
 
-        -- Переносим BV, если HRP пересоздался
-        if autoCollectBV and autoCollectBV.Parent ~= hrp then
-            autoCollectBV.Parent = hrp
-        end
+            if autoCollectTarget and (autoCollectTarget.Position - hrp.Position).Magnitude <= 4 then
+                pcall(function()
+                    if firetouchinterest then
+                        firetouchinterest(hrp, autoCollectTarget, 0)
+                        task.wait(0.02)
+                        firetouchinterest(hrp, autoCollectTarget, 1)
+                    end
+                end)
+                autoCollectTarget = nil
+                refreshCoinCache()
+            end
 
-        hum.PlatformStand = true
-        applyNoclip()
+            if not autoCollectTarget then
+                autoCollectStatus:Set("Searching for coins...")
+                task.wait(0.2)
+                continue
+            end
 
-        -- Поиск цели раз в 0.3 сек или если цель пропала
-        local now = tick()
-        if not autoCollectTarget or not autoCollectTarget.Parent
-           or now - autoCollectTargetScan > 0.3 then
-            autoCollectTarget = findNearestCoin()
-            autoCollectTargetScan = now
-        end
+            applyNoclip()
+            hum.PlatformStand = true
 
-        local targetPos
-        if autoCollectTarget then
-            targetPos = autoCollectTarget.Position + Vector3.new(0, autoCollectHeight, 0)
-        else
-            -- Нет монет — стоим на месте
-            autoCollectBV.Velocity = Vector3.zero
-            autoCollectStatusLabel:Set("Searching for coins...")
-            return
-        end
+            local target = autoCollectTarget.Position + Vector3.new(0, autoCollectHeight, 0)
+            local dist = (target - hrp.Position).Magnitude
+            local duration = math.clamp(dist / autoCollectSpeed, 0.15, 3)
 
-        local dir = targetPos - hrp.Position
-        local dist = dir.Magnitude
-        if dist < 0.1 then
-            autoCollectBV.Velocity = Vector3.zero
-        else
-            autoCollectBV.Velocity = dir.Unit * autoCollectSpeed
-        end
+            if autoCollectTween then pcall(function() autoCollectTween:Cancel() end) end
 
-        -- Сбор монеты, если близко
-        if autoCollectTarget and (autoCollectTarget.Position - hrp.Position).Magnitude <= autoCollectRange then
-            pcall(function()
-                if firetouchinterest then
-                    firetouchinterest(hrp, autoCollectTarget, 0)
-                    task.wait(0.02)
-                    firetouchinterest(hrp, autoCollectTarget, 1)
+            local tw = TweenService:Create(
+                hrp,
+                TweenInfo.new(duration, Enum.EasingStyle.Linear),
+                { CFrame = CFrame.new(target) }
+            )
+            autoCollectTween = tw
+            tw:Play()
+
+            local waited = 0
+            local step = 0.05
+            while tw.PlaybackState == Enum.PlaybackState.Playing
+                  and waited < duration
+                  and autoCollect
+                  and autoCollectRunning do
+                task.wait(step)
+                waited = waited + step
+
+                if autoCollectTarget and not autoCollectTarget.Parent then
+                    pcall(function() tw:Cancel() end)
+                    break
                 end
-            end)
-            autoCollectTarget = nil
-            autoCollectTargetScan = 0
-        end
 
-        autoCollectStatusLabel:Set(string.format("Speed: %d | Target: %s",
-            autoCollectSpeed,
-            autoCollectTarget and "coin" or "searching"))
+                local h0 = GetHRP()
+                if autoCollectTarget and h0 and (autoCollectTarget.Position - h0.Position).Magnitude <= 4 then
+                    pcall(function()
+                        if firetouchinterest then
+                            firetouchinterest(h0, autoCollectTarget, 0)
+                            task.wait(0.02)
+                            firetouchinterest(h0, autoCollectTarget, 1)
+                        end
+                    end)
+                    autoCollectTarget = nil
+                    pcall(function() tw:Cancel() end)
+                    break
+                end
+            end
+
+            autoCollectStatus:Set(string.format("Speed: %d | Target: %s",
+                autoCollectSpeed,
+                autoCollectTarget and "coin" or "searching"))
+        end
+        stopAutoCollect()
     end)
 end
 
--- Cleanup on death / respawn
 LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
     if autoCollect and autoCollectRunning then
-        task.wait(1)
-        local hrp = GetHRP()
-        if hrp and autoCollectBV then
-            autoCollectBV.Parent = hrp
-        end
+        autoCollectTarget = nil
+        refreshCoinCache()
     end
 end)
 
