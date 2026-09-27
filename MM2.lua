@@ -596,13 +596,13 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
     Callback = function(v) Camera.FieldOfView = v end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAMEPLAY — AUTO FARM COINS (без тряски, пауза = 0)
+-- GAMEPLAY — AUTO FARM COINS (кеш монет, без тряски)
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
 
 local autoCollect       = false
-local autoCollectSpeed  = 0       -- ПАУЗА после каждой монеты (0 = без паузы)
+local autoCollectSpeed  = 0
 local autoFarmSpeed     = 2
 local autoFarmMode      = "Nearest"
 local autoFarmHeight    = 2.5
@@ -613,7 +613,6 @@ local autoFarmCollected = 0
 local lobbyCFrame       = nil
 local savedAutoRotate   = true
 
--- отменяет текущий tween, если есть
 local function cancelFarmTween()
     if HUB._farmTween then
         pcall(function() HUB._farmTween:Cancel() end)
@@ -665,32 +664,40 @@ GameplaySub:AddToggle({ Name = "Return to Lobby", Default = true, Flag = "auto_f
 
 local farmStatus = GameplaySub:AddParagraph({ Title = "Status", Text = "Idle" })
 
-task.spawn(function()
-    local function getAllCoins()
-        local coins = {}
-        for _, v in ipairs(Workspace:GetDescendants()) do
-            if v:IsA("BasePart") and v.Transparency < 1 and v.Parent
-               and (v.Name == "Coin" or v.Name:lower():find("coin")) then
-                table.insert(coins, v)
-            end
+-- ── Кеш монет (обновляется раз в 0.8 сек) ──
+local coinCache = {}
+local coinCacheTime = 0
+local COIN_CACHE_TTL = 0.8
+
+local function refreshCoinCache()
+    local newCache = {}
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Transparency < 1 and v.Parent
+           and (v.Name == "Coin" or v.Name:lower():find("coin")) then
+            table.insert(newCache, v)
         end
-        return coins
+    end
+    coinCache = newCache
+    coinCacheTime = tick()
+end
+
+local function pickCoin(hrp)
+    if not hrp or #coinCache == 0 then return nil, nil end
+    local myPos = hrp.Position
+
+    if autoFarmMode == "Randomize" then
+        for _ = 1, 10 do
+            local c = coinCache[math.random(1, #coinCache)]
+            if c and c.Parent then return c, (c.Position - myPos).Magnitude end
+        end
+        return nil, nil
     end
 
-    local function getNearestCoin(hrp)
-        if not hrp then return nil, nil end
-        local all = getAllCoins()
-        if #all == 0 then return nil, nil end
-
-        if autoFarmMode == "Randomize" then
-            local c = all[math.random(1, #all)]
-            return c, (c.Position - hrp.Position).Magnitude
-        end
-
-        if autoFarmMode == "Nearest + XP" then
-            local best, bestDist, bestXp = nil, math.huge, -math.huge
-            for _, v in ipairs(all) do
-                local d = (v.Position - hrp.Position).Magnitude
+    if autoFarmMode == "Nearest + XP" then
+        local best, bestDist, bestXp = nil, math.huge, -math.huge
+        for _, v in ipairs(coinCache) do
+            if v and v.Parent then
+                local d = (v.Position - myPos).Magnitude
                 local xp = 0
                 pcall(function()
                     local x = v:GetAttribute("XP") or v:GetAttribute("Xp") or v:GetAttribute("Value")
@@ -698,84 +705,97 @@ task.spawn(function()
                 end)
                 if d < 60 and xp > bestXp then best, bestDist, bestXp = v, d, xp end
             end
-            if best then return best, bestDist end
         end
-
-        local best, bestDist = nil, math.huge
-        for _, v in ipairs(all) do
-            local ok, d = pcall(function() return (v.Position - hrp.Position).Magnitude end)
-            if ok and d < bestDist and d <= 250 then best, bestDist = v, d end
-        end
-        return best, bestDist
+        if best then return best, bestDist end
     end
 
-    -- плавный полёт без дёрганья
-    local function flyTo(targetCF, duration)
-        cancelFarmTween()
-        local tw = TweenService:Create(GetHRP(), TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCF })
-        HUB._farmTween = tw
-        tw:Play()
-        tw.Completed:Wait()
-        if HUB._farmTween == tw then HUB._farmTween = nil end
+    local best, bestDist = nil, math.huge
+    for _, v in ipairs(coinCache) do
+        if v and v.Parent then
+            local d = (v.Position - myPos).Magnitude
+            if d < bestDist then best, bestDist = v, d end
+        end
     end
+    return best, bestDist
+end
 
+local function flyTo(targetCF, duration)
+    cancelFarmTween()
+    local hrp = GetHRP()
+    if not hrp then return end
+    local tw = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCF })
+    HUB._farmTween = tw
+    tw:Play()
+    tw.Completed:Wait()
+    if HUB._farmTween == tw then HUB._farmTween = nil end
+end
+
+task.spawn(function()
+    refreshCoinCache()
     while not HUB.dead do
         if autoCollect then
-            pcall(function()
-                local hrp = GetHRP()
-                local hum = GetHumanoid()
-                if hrp and hum and hum.Health > 0 then
-                    hum.AutoRotate = false
+            local hrp = GetHRP()
+            local hum = GetHumanoid()
+            if hrp and hum and hum.Health > 0 then
+                hum.AutoRotate = false
 
-                    if autoFarmNoclip then
-                        local char = GetCharacter()
-                        if char then
-                            for _, part in ipairs(char:GetDescendants()) do
-                                if part:IsA("BasePart") then part.CanCollide = false end
-                            end
+                if autoFarmNoclip then
+                    local char = GetCharacter()
+                    if char then
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then part.CanCollide = false end
                         end
                     end
+                end
 
-                    if autoFarmReturn and autoFarmCollected >= autoFarmLimit and lobbyCFrame then
-                        local target = lobbyCFrame.Position
-                        local d = (target - hrp.Position).Magnitude
-                        if d > 3 then
-                            local dur = math.clamp(d / 100, 0.22, 3) * autoFarmSpeed
-                            flyTo(lobbyCFrame, dur)
-                        end
-                        autoFarmCollected = 0
-                        task.wait(1)
+                if tick() - coinCacheTime > COIN_CACHE_TTL then
+                    refreshCoinCache()
+                end
+
+                if autoFarmReturn and autoFarmCollected >= autoFarmLimit and lobbyCFrame then
+                    local target = lobbyCFrame.Position
+                    local d = (target - hrp.Position).Magnitude
+                    if d > 3 then
+                        local dur = math.clamp(d / 100, 0.22, 3) * autoFarmSpeed
+                        flyTo(lobbyCFrame, dur)
                     end
+                    autoFarmCollected = 0
+                    task.wait(1)
+                end
 
-                    local coin, dist = getNearestCoin(hrp)
-                    if coin then
-                        if dist and dist < 10 then
+                local coin, dist = pickCoin(hrp)
+                if coin then
+                    local ok, curDist = pcall(function() return (coin.Position - hrp.Position).Magnitude end)
+                    if ok and curDist then
+                        if curDist < 10 then
                             if firetouchinterest then
                                 pcall(function()
                                     firetouchinterest(hrp, coin, 0)
                                     firetouchinterest(hrp, coin, 1)
                                 end)
                             end
-                            -- вместо резкого телепорта — маленький tween 0.1
-                            flyTo(CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)), 0.1)
+                            flyTo(CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)), 0.12)
                             autoFarmCollected = autoFarmCollected + 1
                             if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
                         else
-                            local duration = math.clamp((dist or 100) / 100, 0.22, 0.9) * autoFarmSpeed
+                            local duration = math.clamp(curDist / 100, 0.22, 0.9) * autoFarmSpeed
                             flyTo(CFrame.new(coin.Position + Vector3.new(0, autoFarmHeight, 0)), duration)
                             if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
                         end
-                        farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
-                    else
-                        farmStatus:Set(string.format("[%s] No coins. %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
                     end
+                    farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
+                else
+                    farmStatus:Set(string.format("[%s] No coins. %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
+                    task.wait(0.3)
                 end
-            end)
+            else
+                task.wait(0.5)
+            end
         else
             cancelFarmTween()
             farmStatus:Set("Idle")
+            task.wait(0.5)
         end
-        task.wait(0.05)
     end
 end)
 
