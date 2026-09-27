@@ -596,7 +596,7 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
     Callback = function(v) Camera.FieldOfView = v end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAMEPLAY — AUTO FARM COINS (плавно, ровно, без подбрасывания)
+-- GAMEPLAY — AUTO FARM COINS (непрерывный полёт через Heartbeat)
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
@@ -611,13 +611,7 @@ local autoFarmReturn    = true
 local autoFarmCollected = 0
 local lobbyCFrame       = nil
 local savedAutoRotate   = true
-
-local function cancelFarmTween()
-    if HUB._farmTween then
-        pcall(function() HUB._farmTween:Cancel() end)
-        HUB._farmTween = nil
-    end
-end
+local currentTarget     = nil
 
 GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
     Callback = function(v)
@@ -632,8 +626,9 @@ GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "au
                 hum.PlatformStand = false
             end
             autoFarmCollected = 0
+            currentTarget = nil
         else
-            cancelFarmTween()
+            currentTarget = nil
             local hum = GetHumanoid()
             if hum then
                 hum.AutoRotate = savedAutoRotate
@@ -719,82 +714,94 @@ local function pickCoin(hrp)
     return best, bestDist
 end
 
--- Плавный полёт ровно на позицию цели
-local function flyTo(targetCF, duration)
-    cancelFarmTween()
-    local hrp = GetHRP()
-    if not hrp then return end
-    local tw = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCF })
-    HUB._farmTween = tw
-    tw:Play()
-    tw.Completed:Wait()
-    if HUB._farmTween == tw then HUB._farmTween = nil end
+-- ════════════════════════════════════════════════════════════════════════════
+-- НЕПРЕРЫВНЫЙ ПОЛЁТ через Heartbeat — без блокировок
+-- ════════════════════════════════════════════════════════════════════════════
+local flyLoopConn = nil
+
+local function startFlyLoop()
+    if flyLoopConn then flyLoopConn:Disconnect() end
+    flyLoopConn = RunService.Heartbeat:Connect(function(dt)
+        if not autoCollect or HUB.dead then return end
+        local hrp = GetHRP()
+        local hum = GetHumanoid()
+        if not hrp or not hum or hum.Health <= 0 then return end
+
+        hum.AutoRotate = false
+        hum.PlatformStand = false
+
+        -- Noclip
+        if autoFarmNoclip then
+            local char = GetCharacter()
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
+        end
+
+        -- Кеш монет
+        if tick() - coinCacheTime > COIN_CACHE_TTL then
+            refreshCoinCache()
+        end
+
+        -- Возврат в лобби
+        if autoFarmReturn and autoFarmCollected >= autoFarmLimit and lobbyCFrame then
+            local target = lobbyCFrame.Position
+            local myPos = hrp.Position
+            local d = (target - myPos).Magnitude
+            if d > 3 then
+                local k = math.clamp(dt * (autoFarmSpeed * 3), 0, 1)
+                hrp.CFrame = CFrame.new(myPos:Lerp(target, k))
+            else
+                autoFarmCollected = 0
+                currentTarget = nil
+            end
+            return
+        end
+
+        -- Ищем цель, если текущая потеряна или собрана
+        if not currentTarget or not currentTarget.Parent then
+            local coin = pickCoin(hrp)
+            currentTarget = coin
+        end
+
+        -- Летим к цели
+        if currentTarget and currentTarget.Parent then
+            local coinPos = currentTarget.Position
+            local myPos = hrp.Position
+            local dist = (coinPos - myPos).Magnitude
+
+            if dist < 4 then
+                -- собрали
+                if firetouchinterest then
+                    pcall(function()
+                        firetouchinterest(hrp, currentTarget, 0)
+                        firetouchinterest(hrp, currentTarget, 1)
+                    end)
+                end
+                autoFarmCollected = autoFarmCollected + 1
+                currentTarget = nil
+            else
+                -- плавный lerp — непрерывное движение
+                local speed = dt * (autoFarmSpeed * 30)
+                hrp.CFrame = CFrame.new(myPos:Lerp(coinPos, math.clamp(speed, 0, 1)))
+            end
+        end
+    end)
 end
 
+startFlyLoop()
+
+-- Обновление статуса
 task.spawn(function()
-    refreshCoinCache()
     while not HUB.dead do
         if autoCollect then
-            local hrp = GetHRP()
-            local hum = GetHumanoid()
-            if hrp and hum and hum.Health > 0 then
-                hum.AutoRotate = false
-                hum.PlatformStand = false
-
-                if autoFarmNoclip then
-                    local char = GetCharacter()
-                    if char then
-                        for _, part in ipairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") then part.CanCollide = false end
-                        end
-                    end
-                end
-
-                if tick() - coinCacheTime > COIN_CACHE_TTL then
-                    refreshCoinCache()
-                end
-
-                if autoFarmReturn and autoFarmCollected >= autoFarmLimit and lobbyCFrame then
-                    local target = lobbyCFrame.Position
-                    local d = (target - hrp.Position).Magnitude
-                    if d > 3 then
-                        local dur = math.clamp(d / 100, 0.22, 3) * autoFarmSpeed
-                        flyTo(lobbyCFrame, dur)
-                    end
-                    autoFarmCollected = 0
-                    task.wait(1)
-                end
-
-                local coin, dist = pickCoin(hrp)
-                if coin then
-                    local ok, curDist = pcall(function() return (coin.Position - hrp.Position).Magnitude end)
-                    if ok and curDist and curDist < 12 then
-                        if firetouchinterest then
-                            pcall(function()
-                                firetouchinterest(hrp, coin, 0)
-                                firetouchinterest(hrp, coin, 1)
-                            end)
-                        end
-                        autoFarmCollected = autoFarmCollected + 1
-                        if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
-                    else
-                        local duration = math.clamp((curDist or 100) / 100, 0.22, 0.9) * autoFarmSpeed
-                        flyTo(CFrame.new(coin.Position), duration)
-                        if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
-                    end
-                    farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
-                else
-                    farmStatus:Set(string.format("[%s] No coins. %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
-                    task.wait(0.3)
-                end
-            else
-                task.wait(0.5)
-            end
+            farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
         else
-            cancelFarmTween()
             farmStatus:Set("Idle")
-            task.wait(0.5)
         end
+        task.wait(0.5)
     end
 end)
 
