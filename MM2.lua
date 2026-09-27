@@ -17,7 +17,7 @@ local TweenService       = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera      = Workspace.CurrentCamera
 
-local HUB = { conns = {}, drawings = {}, highlights = {}, dead = false }
+local HUB = { conns = {}, drawings = {}, highlights = {}, dead = false, _farmTween = nil }
 local function track(c) table.insert(HUB.conns, c); return c end
 local function trackDrawing(d) if d then table.insert(HUB.drawings, d) end; return d end
 
@@ -596,13 +596,13 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
     Callback = function(v) Camera.FieldOfView = v end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAMEPLAY — AUTO FARM COINS
+-- GAMEPLAY — AUTO FARM COINS (без тряски, пауза = 0)
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
 
 local autoCollect       = false
-local autoCollectSpeed  = 0.8
+local autoCollectSpeed  = 0       -- ПАУЗА после каждой монеты (0 = без паузы)
 local autoFarmSpeed     = 2
 local autoFarmMode      = "Nearest"
 local autoFarmHeight    = 2.5
@@ -612,6 +612,14 @@ local autoFarmReturn    = true
 local autoFarmCollected = 0
 local lobbyCFrame       = nil
 local savedAutoRotate   = true
+
+-- отменяет текущий tween, если есть
+local function cancelFarmTween()
+    if HUB._farmTween then
+        pcall(function() HUB._farmTween:Cancel() end)
+        HUB._farmTween = nil
+    end
+end
 
 GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
     Callback = function(v)
@@ -626,13 +634,14 @@ GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "au
             end
             autoFarmCollected = 0
         else
+            cancelFarmTween()
             local hum = GetHumanoid()
             if hum then hum.AutoRotate = savedAutoRotate end
         end
         Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error")
     end })
 
-GameplaySub:AddSlider({ Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
+GameplaySub:AddSlider({ Name = "Collect Pause", Min = 0, Max = 2, Default = 0, Suffix = "s", Flag = "auto_collect_speed",
     Callback = function(v) autoCollectSpeed = v end })
 
 GameplaySub:AddSlider({ Name = "Fly Speed", Min = 0.5, Max = 5, Default = 2, Suffix = " (ниже = быстрее)", Flag = "auto_farm_speed",
@@ -700,6 +709,16 @@ task.spawn(function()
         return best, bestDist
     end
 
+    -- плавный полёт без дёрганья
+    local function flyTo(targetCF, duration)
+        cancelFarmTween()
+        local tw = TweenService:Create(GetHRP(), TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCF })
+        HUB._farmTween = tw
+        tw:Play()
+        tw.Completed:Wait()
+        if HUB._farmTween == tw then HUB._farmTween = nil end
+    end
+
     while not HUB.dead do
         if autoCollect then
             pcall(function()
@@ -722,8 +741,7 @@ task.spawn(function()
                         local d = (target - hrp.Position).Magnitude
                         if d > 3 then
                             local dur = math.clamp(d / 100, 0.22, 3) * autoFarmSpeed
-                            local tw = TweenService:Create(hrp, TweenInfo.new(dur, Enum.EasingStyle.Linear), { CFrame = lobbyCFrame })
-                            tw:Play(); tw.Completed:Wait()
+                            flyTo(lobbyCFrame, dur)
                         end
                         autoFarmCollected = 0
                         task.wait(1)
@@ -738,17 +756,14 @@ task.spawn(function()
                                     firetouchinterest(hrp, coin, 1)
                                 end)
                             end
-                            pcall(function() hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)) end)
+                            -- вместо резкого телепорта — маленький tween 0.1
+                            flyTo(CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)), 0.1)
                             autoFarmCollected = autoFarmCollected + 1
-                            task.wait(0.15)
+                            if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
                         else
                             local duration = math.clamp((dist or 100) / 100, 0.22, 0.9) * autoFarmSpeed
-                            local tw = TweenService:Create(
-                                hrp,
-                                TweenInfo.new(duration, Enum.EasingStyle.Linear),
-                                { CFrame = CFrame.new(coin.Position + Vector3.new(0, autoFarmHeight, 0)) }
-                            )
-                            tw:Play(); tw.Completed:Wait()
+                            flyTo(CFrame.new(coin.Position + Vector3.new(0, autoFarmHeight, 0)), duration)
+                            if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
                         end
                         farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
                     else
@@ -757,9 +772,10 @@ task.spawn(function()
                 end
             end)
         else
+            cancelFarmTween()
             farmStatus:Set("Idle")
         end
-        task.wait(autoCollect and autoCollectSpeed or 0.5)
+        task.wait(0.05)
     end
 end)
 
