@@ -1,6 +1,4 @@
 -- N3 mogg hub — MM2 script
--- Tabs: MM2 (Player, Visual, Gameplay, System), Others (Aim, ESP), Settings
-
 local Library = _G.N3MoggLibrary
 if not Library then
     error("[N3 mogg hub] Library not loaded", 0)
@@ -598,30 +596,26 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
     Callback = function(v) Camera.FieldOfView = v end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAMEPLAY — AUTO FARM (улучшенный)
+-- GAMEPLAY — AUTO FARM COINS
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
 
-local autoFarm = {
-    enabled    = false,
-    mode       = "Nearest",   -- Nearest / Nearest + XP / Randomize
-    speed      = 25,          -- studs/sec
-    flyHeight  = 4,
-    coinLimit  = 40,
-    collected  = 0,
-    noclip     = true,
-    cacheTTL   = 0.8,
-    minDist    = 3,
-}
+local autoCollect       = false
+local autoCollectSpeed  = 0.8
+local autoFarmSpeed     = 2
+local autoFarmMode      = "Nearest"
+local autoFarmHeight    = 2.5
+local autoFarmLimit     = 40
+local autoFarmNoclip    = true
+local autoFarmReturn    = true
+local autoFarmCollected = 0
+local lobbyCFrame       = nil
+local savedAutoRotate   = true
 
-local lobbyCFrame     = nil
-local farmingNow      = false
-local savedAutoRotate = true
-
-GameplaySub:AddToggle({ Name = "Auto Farm Coins", Default = false, Flag = "auto_farm_enabled",
+GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
     Callback = function(v)
-        autoFarm.enabled = v
+        autoCollect = v
         if v then
             local hrp = GetHRP()
             local hum = GetHumanoid()
@@ -630,208 +624,142 @@ GameplaySub:AddToggle({ Name = "Auto Farm Coins", Default = false, Flag = "auto_
                 savedAutoRotate = hum.AutoRotate
                 hum.AutoRotate = false
             end
-            autoFarm.collected = 0
-            farmingNow = true
-            Notify("Auto Farm", "ON — mode: " .. autoFarm.mode, "Success")
+            autoFarmCollected = 0
         else
-            farmingNow = false
             local hum = GetHumanoid()
             if hum then hum.AutoRotate = savedAutoRotate end
-            local hrp = GetHRP()
-            if hrp then
-                local bv = hrp:FindFirstChild("N3_FarmBV")
-                if bv then bv:Destroy() end
-            end
-            Notify("Auto Farm", "OFF", "Info")
         end
+        Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error")
     end })
 
-GameplaySub:AddDropdown({
-    Name = "Farm Mode",
-    Options = { "Nearest", "Nearest + XP", "Randomize" },
-    Default = "Nearest",
-    Flag = "auto_farm_mode",
-    Callback = function(v) autoFarm.mode = v end,
-})
+GameplaySub:AddSlider({ Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
+    Callback = function(v) autoCollectSpeed = v end })
 
-GameplaySub:AddSlider({ Name = "Speed", Min = 10, Max = 60, Default = 25, Suffix = " studs/s",
-    Flag = "auto_farm_speed", Callback = function(v) autoFarm.speed = v end })
-GameplaySub:AddSlider({ Name = "Fly Height", Min = 2, Max = 10, Default = 4, Suffix = " studs",
-    Flag = "auto_farm_height", Callback = function(v) autoFarm.flyHeight = v end })
-GameplaySub:AddSlider({ Name = "Coin Limit", Min = 5, Max = 50, Default = 40,
-    Flag = "auto_farm_limit", Callback = function(v) autoFarm.coinLimit = v end })
+GameplaySub:AddSlider({ Name = "Fly Speed", Min = 0.5, Max = 5, Default = 2, Suffix = " (ниже = быстрее)", Flag = "auto_farm_speed",
+    Callback = function(v) autoFarmSpeed = v end })
+
+GameplaySub:AddSlider({ Name = "Fly Height", Min = 1, Max = 10, Default = 2.5, Suffix = " studs", Flag = "auto_farm_height",
+    Callback = function(v) autoFarmHeight = v end })
+
+GameplaySub:AddDropdown({ Name = "Farm Mode", Options = { "Nearest", "Nearest + XP", "Randomize" },
+    Default = "Nearest", Flag = "auto_farm_mode",
+    Callback = function(v) autoFarmMode = v end })
+
+GameplaySub:AddSlider({ Name = "Coin Limit", Min = 5, Max = 50, Default = 40, Flag = "auto_farm_limit",
+    Callback = function(v) autoFarmLimit = v end })
+
 GameplaySub:AddToggle({ Name = "Auto Noclip", Default = true, Flag = "auto_farm_noclip",
-    Callback = function(v) autoFarm.noclip = v end })
+    Callback = function(v) autoFarmNoclip = v end })
+
+GameplaySub:AddToggle({ Name = "Return to Lobby", Default = true, Flag = "auto_farm_return",
+    Callback = function(v) autoFarmReturn = v end })
 
 local farmStatus = GameplaySub:AddParagraph({ Title = "Status", Text = "Idle" })
 
--- ── Кеш монет ──
-local coinCache = {}
-local coinCacheTime = 0
-
-local function isCoin(v)
-    if not v:IsA("BasePart") then return false end
-    if v.Transparency >= 1 then return false end
-    if not v.Parent then return false end
-    local n = v.Name:lower()
-    return n == "coin" or n:find("coin") ~= nil
-end
-
-local function refreshCoinCache()
-    local newCache, seen = {}, {}
-    local function scan(container, depth)
-        if depth > 4 then return end
-        for _, v in ipairs(container:GetChildren()) do
-            if isCoin(v) and not seen[v] then
-                seen[v] = true
-                table.insert(newCache, v)
-            end
-            if v:IsA("Folder") or v:IsA("Model") then scan(v, depth + 1) end
-        end
-    end
-    scan(Workspace, 0)
-    coinCache = newCache
-    coinCacheTime = tick()
-end
-
-local function pickCoin(hrp)
-    if not hrp or #coinCache == 0 then return nil, nil end
-    local myPos = hrp.Position
-
-    if autoFarm.mode == "Randomize" then
-        for _ = 1, 10 do
-            local c = coinCache[math.random(1, #coinCache)]
-            if c and c.Parent then return c, (c.Position - myPos).Magnitude end
-        end
-        return nil, nil
-    end
-
-    if autoFarm.mode == "Nearest + XP" then
-        local best, bestDist, bestXp = nil, math.huge, -math.huge
-        for _, coin in ipairs(coinCache) do
-            if coin and coin.Parent then
-                local d = (coin.Position - myPos).Magnitude
-                local xp = 0
-                local ok, v = pcall(function() return coin:GetAttribute("XP") or coin:GetAttribute("Xp") or coin:GetAttribute("Value") end)
-                if ok and typeof(v) == "number" then xp = v end
-                if d < 60 and xp > bestXp then best, bestDist, bestXp = coin, d, xp end
-            end
-        end
-        if best then return best, bestDist end
-    end
-
-    local best, bestDist = nil, math.huge
-    for _, coin in ipairs(coinCache) do
-        if coin and coin.Parent then
-            local d = (coin.Position - myPos).Magnitude
-            if d < bestDist then best, bestDist = coin, d end
-        end
-    end
-    return best, bestDist
-end
-
-local function applyNoclip()
-    if not autoFarm.noclip then return end
-    local char = GetCharacter()
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then part.CanCollide = false end
-    end
-end
-
--- ── Плавный полёт через Lerp ──
-local currentFlyConn = nil
-
-local function stopFly()
-    if currentFlyConn then
-        pcall(function() currentFlyConn:Disconnect() end)
-        currentFlyConn = nil
-    end
-end
-
-local function flyTo(targetPos, duration)
-    stopFly()
-    local hrp = GetHRP()
-    if not hrp then return end
-    local startPos = hrp.Position
-    local startTime = tick()
-    currentFlyConn = RunService.RenderStepped:Connect(function()
-        local h = GetHRP()
-        if not h then stopFly(); return end
-        local elapsed = tick() - startTime
-        local alpha = math.clamp(elapsed / duration, 0, 1)
-        local newPos = startPos:Lerp(targetPos, alpha)
-        h.CFrame = CFrame.new(newPos, newPos + h.CFrame.LookVector)
-        if alpha >= 1 then stopFly() end
-    end)
-end
-
--- ── Главный цикл ──
 task.spawn(function()
-    while not HUB.dead do
-        if autoFarm.enabled and farmingNow then
-            local hrp = GetHRP()
-            local hum = GetHumanoid()
-            if hrp and hum and hum.Health > 0 then
-                hum.AutoRotate = false
-                hum.PlatformStand = false
-
-                if tick() - coinCacheTime > autoFarm.cacheTTL then
-                    refreshCoinCache()
-                end
-
-                -- Лимит — возврат в лобби
-                if autoFarm.collected >= autoFarm.coinLimit and lobbyCFrame then
-                    farmStatus:Set("Returning to lobby...")
-                    local target = lobbyCFrame.Position
-                    local d = (target - hrp.Position).Magnitude
-                    if d > 3 then
-                        local dur = math.clamp(d / autoFarm.speed, 0.5, 8)
-                        flyTo(target, dur)
-                        task.wait(dur + 0.1)
-                    end
-                    autoFarm.collected = 0
-                    task.wait(1)
-                end
-
-                local coin, dist = pickCoin(hrp)
-                if coin then
-                    local target = coin.Position + Vector3.new(0, autoFarm.flyHeight, 0)
-                    local coinDist = (coin.Position - hrp.Position).Magnitude
-
-                    if coinDist > autoFarm.minDist then
-                        local duration = math.clamp(coinDist / autoFarm.speed, 0.15, 6)
-                        flyTo(target, duration)
-                        task.wait(duration)
-                    else
-                        stopFly()
-                        applyNoclip()
-                        if firetouchinterest then
-                            pcall(function()
-                                firetouchinterest(hrp, coin, 0)
-                                firetouchinterest(hrp, coin, 1)
-                            end)
-                        end
-                        autoFarm.collected = autoFarm.collected + 1
-                    end
-                    farmStatus:Set(string.format("[%s] Coins: %d/%d | %.0fm | %d studs/s",
-                        autoFarm.mode, autoFarm.collected, autoFarm.coinLimit, dist or 0, autoFarm.speed))
-                    task.wait(0.05)
-                else
-                    stopFly()
-                    farmStatus:Set(string.format("[%s] No coins. Coins: %d/%d",
-                        autoFarm.mode, autoFarm.collected, autoFarm.coinLimit))
-                    task.wait(0.5)
-                end
-            else
-                stopFly()
-                farmStatus:Set("Waiting for character...")
-                task.wait(1)
+    local function getAllCoins()
+        local coins = {}
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart") and v.Transparency < 1 and v.Parent
+               and (v.Name == "Coin" or v.Name:lower():find("coin")) then
+                table.insert(coins, v)
             end
+        end
+        return coins
+    end
+
+    local function getNearestCoin(hrp)
+        if not hrp then return nil, nil end
+        local all = getAllCoins()
+        if #all == 0 then return nil, nil end
+
+        if autoFarmMode == "Randomize" then
+            local c = all[math.random(1, #all)]
+            return c, (c.Position - hrp.Position).Magnitude
+        end
+
+        if autoFarmMode == "Nearest + XP" then
+            local best, bestDist, bestXp = nil, math.huge, -math.huge
+            for _, v in ipairs(all) do
+                local d = (v.Position - hrp.Position).Magnitude
+                local xp = 0
+                pcall(function()
+                    local x = v:GetAttribute("XP") or v:GetAttribute("Xp") or v:GetAttribute("Value")
+                    if typeof(x) == "number" then xp = x end
+                end)
+                if d < 60 and xp > bestXp then best, bestDist, bestXp = v, d, xp end
+            end
+            if best then return best, bestDist end
+        end
+
+        local best, bestDist = nil, math.huge
+        for _, v in ipairs(all) do
+            local ok, d = pcall(function() return (v.Position - hrp.Position).Magnitude end)
+            if ok and d < bestDist and d <= 250 then best, bestDist = v, d end
+        end
+        return best, bestDist
+    end
+
+    while not HUB.dead do
+        if autoCollect then
+            pcall(function()
+                local hrp = GetHRP()
+                local hum = GetHumanoid()
+                if hrp and hum and hum.Health > 0 then
+                    hum.AutoRotate = false
+
+                    if autoFarmNoclip then
+                        local char = GetCharacter()
+                        if char then
+                            for _, part in ipairs(char:GetDescendants()) do
+                                if part:IsA("BasePart") then part.CanCollide = false end
+                            end
+                        end
+                    end
+
+                    if autoFarmReturn and autoFarmCollected >= autoFarmLimit and lobbyCFrame then
+                        local target = lobbyCFrame.Position
+                        local d = (target - hrp.Position).Magnitude
+                        if d > 3 then
+                            local dur = math.clamp(d / 100, 0.22, 3) * autoFarmSpeed
+                            local tw = TweenService:Create(hrp, TweenInfo.new(dur, Enum.EasingStyle.Linear), { CFrame = lobbyCFrame })
+                            tw:Play(); tw.Completed:Wait()
+                        end
+                        autoFarmCollected = 0
+                        task.wait(1)
+                    end
+
+                    local coin, dist = getNearestCoin(hrp)
+                    if coin then
+                        if dist and dist < 10 then
+                            if firetouchinterest then
+                                pcall(function()
+                                    firetouchinterest(hrp, coin, 0)
+                                    firetouchinterest(hrp, coin, 1)
+                                end)
+                            end
+                            pcall(function() hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)) end)
+                            autoFarmCollected = autoFarmCollected + 1
+                            task.wait(0.15)
+                        else
+                            local duration = math.clamp((dist or 100) / 100, 0.22, 0.9) * autoFarmSpeed
+                            local tw = TweenService:Create(
+                                hrp,
+                                TweenInfo.new(duration, Enum.EasingStyle.Linear),
+                                { CFrame = CFrame.new(coin.Position + Vector3.new(0, autoFarmHeight, 0)) }
+                            )
+                            tw:Play(); tw.Completed:Wait()
+                        end
+                        farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
+                    else
+                        farmStatus:Set(string.format("[%s] No coins. %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
+                    end
+                end
+            end)
         else
             farmStatus:Set("Idle")
-            task.wait(0.5)
         end
+        task.wait(autoCollect and autoCollectSpeed or 0.5)
     end
 end)
 
