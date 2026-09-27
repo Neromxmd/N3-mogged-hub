@@ -593,49 +593,61 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
     Callback = function(v) Camera.FieldOfView = v end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAMEPLAY — AUTO FARM (Humanoid:MoveTo — без телепорта)
+-- GAMEPLAY — AUTO FARM (плавно, без телепорта, поворот блокируется)
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
 
 local autoFarm = {
-    enabled    = false,
-    flySpeed   = 18,   -- 15–20 studs/s
-    flyHeight  = 4,
-    coinLimit  = 40,
-    collected  = 0,
-    noclip     = true,
+    enabled   = false,
+    flySpeed  = 25,
+    flyHeight = 4,
+    coinLimit = 40,
+    collected = 0,
+    noclip    = true,
 }
 local lobbyCFrame = nil
-local farmingNow = false
+local farmingNow  = false
+local savedAutoRotate = true
 
 GameplaySub:AddToggle({ Name = "Auto Farm", Default = false, Flag = "auto_farm_enabled",
     Callback = function(v)
         autoFarm.enabled = v
         if v then
             local hrp = GetHRP()
+            local hum = GetHumanoid()
             if hrp then lobbyCFrame = hrp.CFrame end
+            if hum then
+                savedAutoRotate = hum.AutoRotate
+                hum.AutoRotate = false
+            end
             autoFarm.collected = 0
             farmingNow = true
-            Notify("Auto Farm", "ON — standing still, waiting for round", "Success")
+            Notify("Auto Farm", "ON — rotation locked", "Success")
         else
             farmingNow = false
-            Notify("Auto Farm", "OFF", "Info")
+            local hum = GetHumanoid()
+            if hum then hum.AutoRotate = savedAutoRotate end
+            local hrp = GetHRP()
+            if hrp then
+                local bv = hrp:FindFirstChild("N3_FarmBV")
+                if bv then bv:Destroy() end
+            end
+            Notify("Auto Farm", "OFF — rotation restored", "Info")
         end
     end })
 
-GameplaySub:AddSlider({ Name = "Speed", Min = 10, Max = 30, Default = 18, Suffix = " studs/s", Flag = "auto_farm_speed",
-    Callback = function(v) autoFarm.flySpeed = v end })
-GameplaySub:AddSlider({ Name = "Fly Height", Min = 2, Max = 10, Default = 4, Suffix = " studs", Flag = "auto_farm_height",
-    Callback = function(v) autoFarm.flyHeight = v end })
-GameplaySub:AddSlider({ Name = "Coin Limit", Min = 5, Max = 50, Default = 40, Flag = "auto_farm_limit",
-    Callback = function(v) autoFarm.coinLimit = v end })
+GameplaySub:AddSlider({ Name = "Speed", Min = 10, Max = 40, Default = 25, Suffix = " studs/s",
+    Flag = "auto_farm_speed", Callback = function(v) autoFarm.flySpeed = v end })
+GameplaySub:AddSlider({ Name = "Fly Height", Min = 2, Max = 10, Default = 4, Suffix = " studs",
+    Flag = "auto_farm_height", Callback = function(v) autoFarm.flyHeight = v end })
+GameplaySub:AddSlider({ Name = "Coin Limit", Min = 5, Max = 50, Default = 40,
+    Flag = "auto_farm_limit", Callback = function(v) autoFarm.coinLimit = v end })
 GameplaySub:AddToggle({ Name = "Auto Noclip", Default = true, Flag = "auto_farm_noclip",
     Callback = function(v) autoFarm.noclip = v end })
 
 local farmStatus = GameplaySub:AddParagraph({ Title = "Status", Text = "Idle" })
 
--- Кеш монет
 local coinCache = {}
 local coinCacheTime = 0
 local COIN_CACHE_TTL = 0.8
@@ -676,16 +688,20 @@ local function applyNoclip()
     end
 end
 
-local function moveTowards(hrp, targetPos, speed)
-    -- Двигаем через BodyVelocity С ОЧЕНЬ МАЛЫМ MaxForce — плавно
+local function getBV(hrp)
     local bv = hrp:FindFirstChild("N3_FarmBV")
     if not bv then
         bv = Instance.new("BodyVelocity")
         bv.Name = "N3_FarmBV"
-        bv.MaxForce = Vector3.new(4e3, 4e3, 4e3)  -- маленькая сила = плавное движение
-        bv.P = 2500
+        bv.MaxForce = Vector3.new(8e3, 4e3, 8e3)
+        bv.P = 4000
         bv.Parent = hrp
     end
+    return bv
+end
+
+local function moveTowards(hrp, targetPos, speed)
+    local bv = getBV(hrp)
     local dir = targetPos - hrp.Position
     if dir.Magnitude < 1 then
         bv.Velocity = Vector3.zero
@@ -706,16 +722,13 @@ task.spawn(function()
             local hrp = GetHRP()
             local hum = GetHumanoid()
             if hrp and hum and hum.Health > 0 then
-                -- Не даём персонажу крутиться и стоять как вкопанному
                 hum.AutoRotate = false
                 hum.PlatformStand = false
 
-                -- Обновляем кеш монет
                 if tick() - coinCacheTime > COIN_CACHE_TTL then
                     refreshCoinCache()
                 end
 
-                -- Проверка лимита
                 if autoFarm.collected >= autoFarm.coinLimit and lobbyCFrame then
                     farmStatus:Set("Returning to lobby...")
                     local target = lobbyCFrame.Position
@@ -732,7 +745,6 @@ task.spawn(function()
                     task.wait(1)
                 end
 
-                -- Ищем ближайшую монету
                 local coin, dist = findNearestCoin(hrp)
                 if coin then
                     local target = coin.Position + Vector3.new(0, autoFarm.flyHeight, 0)
@@ -750,11 +762,13 @@ task.spawn(function()
                         end
                         autoFarm.collected = autoFarm.collected + 1
                     end
-                    farmStatus:Set(string.format("Coins: %d/%d | Nearest: %.0fm", autoFarm.collected, autoFarm.coinLimit, dist or 0))
+                    farmStatus:Set(string.format("Coins: %d/%d | Nearest: %.0fm",
+                        autoFarm.collected, autoFarm.coinLimit, dist or 0))
                     task.wait(0.05)
                 else
                     stopMove(hrp)
-                    farmStatus:Set(string.format("No coins visible. Coins: %d/%d", autoFarm.collected, autoFarm.coinLimit))
+                    farmStatus:Set(string.format("No coins. Coins: %d/%d",
+                        autoFarm.collected, autoFarm.coinLimit))
                     task.wait(0.5)
                 end
             else
