@@ -596,7 +596,7 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
     Callback = function(v) Camera.FieldOfView = v end })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAMEPLAY — AUTO FARM COINS (кеш монет, без тряски)
+-- GAMEPLAY — AUTO FARM COINS (плавно, ровно, без подбрасывания)
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 GameplaySub:AddSection("Auto Farm Coins")
@@ -605,7 +605,6 @@ local autoCollect       = false
 local autoCollectSpeed  = 0
 local autoFarmSpeed     = 2
 local autoFarmMode      = "Nearest"
-local autoFarmHeight    = 2.5
 local autoFarmLimit     = 40
 local autoFarmNoclip    = true
 local autoFarmReturn    = true
@@ -630,12 +629,16 @@ GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "au
             if hum then
                 savedAutoRotate = hum.AutoRotate
                 hum.AutoRotate = false
+                hum.PlatformStand = false
             end
             autoFarmCollected = 0
         else
             cancelFarmTween()
             local hum = GetHumanoid()
-            if hum then hum.AutoRotate = savedAutoRotate end
+            if hum then
+                hum.AutoRotate = savedAutoRotate
+                hum.PlatformStand = false
+            end
         end
         Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error")
     end })
@@ -645,9 +648,6 @@ GameplaySub:AddSlider({ Name = "Collect Pause", Min = 0, Max = 2, Default = 0, S
 
 GameplaySub:AddSlider({ Name = "Fly Speed", Min = 0.5, Max = 5, Default = 2, Suffix = " (ниже = быстрее)", Flag = "auto_farm_speed",
     Callback = function(v) autoFarmSpeed = v end })
-
-GameplaySub:AddSlider({ Name = "Fly Height", Min = 1, Max = 10, Default = 2.5, Suffix = " studs", Flag = "auto_farm_height",
-    Callback = function(v) autoFarmHeight = v end })
 
 GameplaySub:AddDropdown({ Name = "Farm Mode", Options = { "Nearest", "Nearest + XP", "Randomize" },
     Default = "Nearest", Flag = "auto_farm_mode",
@@ -664,7 +664,7 @@ GameplaySub:AddToggle({ Name = "Return to Lobby", Default = true, Flag = "auto_f
 
 local farmStatus = GameplaySub:AddParagraph({ Title = "Status", Text = "Idle" })
 
--- ── Кеш монет (обновляется раз в 0.8 сек) ──
+-- ── Кеш монет ──
 local coinCache = {}
 local coinCacheTime = 0
 local COIN_CACHE_TTL = 0.8
@@ -719,6 +719,7 @@ local function pickCoin(hrp)
     return best, bestDist
 end
 
+-- Плавный полёт ровно на позицию цели
 local function flyTo(targetCF, duration)
     cancelFarmTween()
     local hrp = GetHRP()
@@ -738,6 +739,7 @@ task.spawn(function()
             local hum = GetHumanoid()
             if hrp and hum and hum.Health > 0 then
                 hum.AutoRotate = false
+                hum.PlatformStand = false
 
                 if autoFarmNoclip then
                     local char = GetCharacter()
@@ -766,22 +768,19 @@ task.spawn(function()
                 local coin, dist = pickCoin(hrp)
                 if coin then
                     local ok, curDist = pcall(function() return (coin.Position - hrp.Position).Magnitude end)
-                    if ok and curDist then
-                        if curDist < 10 then
-                            if firetouchinterest then
-                                pcall(function()
-                                    firetouchinterest(hrp, coin, 0)
-                                    firetouchinterest(hrp, coin, 1)
-                                end)
-                            end
-                            flyTo(CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)), 0.12)
-                            autoFarmCollected = autoFarmCollected + 1
-                            if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
-                        else
-                            local duration = math.clamp(curDist / 100, 0.22, 0.9) * autoFarmSpeed
-                            flyTo(CFrame.new(coin.Position + Vector3.new(0, autoFarmHeight, 0)), duration)
-                            if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
+                    if ok and curDist and curDist < 12 then
+                        if firetouchinterest then
+                            pcall(function()
+                                firetouchinterest(hrp, coin, 0)
+                                firetouchinterest(hrp, coin, 1)
+                            end)
                         end
+                        autoFarmCollected = autoFarmCollected + 1
+                        if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
+                    else
+                        local duration = math.clamp((curDist or 100) / 100, 0.22, 0.9) * autoFarmSpeed
+                        flyTo(CFrame.new(coin.Position), duration)
+                        if autoCollectSpeed > 0 then task.wait(autoCollectSpeed) end
                     end
                     farmStatus:Set(string.format("[%s] Coins: %d/%d", autoFarmMode, autoFarmCollected, autoFarmLimit))
                 else
