@@ -53,9 +53,6 @@ local function GetCoins()
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     local c = ls and (ls:FindFirstChild("Coins") or ls:FindFirstChild("Coin"))
     if c and typeof(c.Value) == "number" then return c.Value end
-    local df = LocalPlayer:FindFirstChild("DataFolder")
-    local c2 = df and df:FindFirstChild("Coins")
-    if c2 then return tonumber(c2.Value) or 0 end
     return 0
 end
 local function GetLevel()
@@ -636,94 +633,128 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 
--- ── AUTO FARM COINS ──
+-- ── AUTO FARM COINS (Teleport, no rotation, coin container) ──
 GameplaySub:AddSection("Auto Farm Coins")
 
-local autoCollect       = false
-local autoCollectSpeed  = 0.8
-local autoFlySpeed      = 25
-local autoFlyHeight     = 5
-local autoTPToLobby     = false
-local autoTPLimit       = 40
-local autoTPCollected   = 0
-local lobbyCFrame       = nil
+local autoFarmEnabled = false
+local coinLimit = 40
+local coinsCollected = 0
+local lobbyCFrame = nil
+local isFarming = false
 
-GameplaySub:AddToggle({ Name = "Auto Collect Coins", Default = false, Flag = "auto_collect",
+GameplaySub:AddToggle({
+    Name = "Auto Farm",
+    Default = false,
+    Flag = "auto_farm_enabled",
     Callback = function(v)
-        autoCollect = v
-        autoTPCollected = 0
+        autoFarmEnabled = v
         if v then
             local hrp = GetHRP()
             if hrp then lobbyCFrame = hrp.CFrame end
+            coinsCollected = 0
+            isFarming = true
+            Notify("Gameplay", "Auto Farm ON — Lobby saved", "Success")
+        else
+            isFarming = false
+            Notify("Gameplay", "Auto Farm OFF", "Info")
         end
-        Notify("Gameplay", v and "Auto Coins ON" or "Auto Coins OFF", v and "Success" or "Error")
-    end })
+    end,
+})
 
-GameplaySub:AddSlider({ Name = "Collect Interval", Min = 0.2, Max = 3, Default = 0.8, Suffix = "s", Flag = "auto_collect_speed",
-    Callback = function(v) autoCollectSpeed = v end })
+GameplaySub:AddSlider({
+    Name = "Coin Limit",
+    Min = 5, Max = 50, Default = 40,
+    Flag = "auto_farm_limit",
+    Callback = function(v) coinLimit = v end,
+})
 
-GameplaySub:AddSlider({ Name = "Fly Speed", Min = 10, Max = 80, Default = 25, Suffix = " studs/s", Flag = "auto_fly_speed",
-    Callback = function(v) autoFlySpeed = v end })
+GameplaySub:AddParagraph({
+    Title = "Status",
+    Text = "Idle — Lobby not saved",
+})
 
-GameplaySub:AddSlider({ Name = "Fly Height", Min = 2, Max = 15, Default = 5, Suffix = " studs", Flag = "auto_fly_height",
-    Callback = function(v) autoFlyHeight = v end })
+local statusLabel = GameplaySub:AddParagraph({
+    Title = "Status",
+    Text = "Idle",
+})
 
-GameplaySub:AddToggle({ Name = "Auto Teleport to Lobby", Default = false, Flag = "auto_tp_lobby",
-    Description = "После N монет — вернуться в лобби",
-    Callback = function(v)
-        autoTPToLobby = v
-        if v and not lobbyCFrame then
-            local hrp = GetHRP()
-            if hrp then lobbyCFrame = hrp.CFrame end
+-- Поиск контейнера монет
+local function getCoinContainer()
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:FindFirstChild("CoinContainer") then
+            return obj.CoinContainer
         end
-    end })
+    end
+    return nil
+end
 
-GameplaySub:AddSlider({ Name = "TP After Coins", Min = 5, Max = 200, Default = 40, Flag = "auto_tp_limit",
-    Callback = function(v) autoTPLimit = v end })
-
-task.spawn(function()
-    local function getNearestCoin()
-        local hrp = GetHRP(); if not hrp then return nil end
-        local best, bestDist = nil, math.huge
-        for _, v in ipairs(Workspace:GetDescendants()) do
-            if v:IsA("BasePart") and v.Transparency < 1 and v.Parent and (v.Name == "Coin" or v.Name:lower():find("coin")) then
-                local ok, d = pcall(function() return (v.Position - hrp.Position).Magnitude end)
-                if ok and d < bestDist and d <= 250 then best = v; bestDist = d end
+-- Ближайшая монета
+local function findNearestCoin(hrp, container)
+    if not hrp or not container then return nil end
+    local myPos = hrp.Position
+    local best, bestDist = nil, math.huge
+    for _, coin in ipairs(container:GetChildren()) do
+        if coin:IsA("BasePart") then
+            local visual = coin:FindFirstChild("CoinVisual")
+            if visual and not visual:GetAttribute("Collected") then
+                local d = (coin.Position - myPos).Magnitude
+                if d < bestDist then
+                    best = coin
+                    bestDist = d
+                end
             end
         end
-        return best
     end
+    return best
+end
 
+task.spawn(function()
     while not HUB.dead do
-        if autoCollect then
-            pcall(function()
-                if autoTPToLobby and autoTPCollected >= autoTPLimit and lobbyCFrame then
-                    local hrp = GetHRP()
-                    if hrp then
-                        hrp.CFrame = lobbyCFrame
+        if autoFarmEnabled and isFarming then
+            local hrp = GetHRP()
+            local hum = GetHumanoid()
+            if hrp and hum and hum.Health > 0 then
+                -- Лимит — возврат в лобби
+                if coinsCollected >= coinLimit and lobbyCFrame then
+                    hrp.CFrame = lobbyCFrame
+                    coinsCollected = 0
+                    statusLabel:Set(string.format("Returned to lobby. Coins reset to 0/%d", coinLimit))
+                    task.wait(1)
+                end
+
+                local container = getCoinContainer()
+                if container then
+                    local coin = findNearestCoin(hrp, container)
+                    if coin then
+                        -- Телепорт без поворота
+                        hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+
+                        -- Сбор
+                        if firetouchinterest then
+                            pcall(function()
+                                firetouchinterest(hrp, coin, 0)
+                                firetouchinterest(hrp, coin, 1)
+                            end)
+                        end
+                        coinsCollected = coinsCollected + 1
+                        statusLabel:Set(string.format("Farming... %d/%d", coinsCollected, coinLimit))
+                        task.wait(0.1)
+                    else
+                        statusLabel:Set(string.format("No coins in range. %d/%d", coinsCollected, coinLimit))
                         task.wait(0.5)
                     end
-                    autoTPCollected = 0
+                else
+                    statusLabel:Set("Waiting for round / no CoinContainer")
+                    task.wait(0.5)
                 end
-
-                local coin = getNearestCoin()
-                local hrp = GetHRP()
-                if coin and hrp then
-                    local dist = (coin.Position - hrp.Position).Magnitude
-                    if dist < 10 then
-                        if firetouchinterest then pcall(function() firetouchinterest(hrp, coin, 0); firetouchinterest(hrp, coin, 1) end) end
-                        pcall(function() hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 1.5, 0)) end)
-                        autoTPCollected = autoTPCollected + 1
-                        task.wait(0.15)
-                    else
-                        local duration = math.clamp(dist / autoFlySpeed, 0.15, 5)
-                        local tw = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = CFrame.new(coin.Position + Vector3.new(0, autoFlyHeight, 0)) })
-                        tw:Play(); tw.Completed:Wait()
-                    end
-                end
-            end)
+            else
+                statusLabel:Set("Waiting for character...")
+                task.wait(1)
+            end
+        else
+            statusLabel:Set("Idle")
+            task.wait(0.5)
         end
-        task.wait(autoCollect and autoCollectSpeed or 0.5)
     end
 end)
 
@@ -733,6 +764,7 @@ GameplaySub:AddSection("Auto Reconnect")
 local autoReconnect     = false
 local reconnectTarget   = nil
 local reconnectAttempts = 0
+local maxReconnectAttempts = 5
 
 GameplaySub:AddToggle({ Name = "Auto Reconnect", Default = false, Flag = "auto_reconnect",
     Description = "Заходит обратно, если выкинуло",
@@ -745,7 +777,7 @@ GameplaySub:AddToggle({ Name = "Auto Reconnect", Default = false, Flag = "auto_r
     end })
 
 GameplaySub:AddSlider({ Name = "Max Attempts", Min = 1, Max = 20, Default = 5, Flag = "auto_reconnect_attempts",
-    Callback = function(v) end })
+    Callback = function(v) maxReconnectAttempts = v end })
 
 LocalPlayer.OnTeleport:Connect(function(state)
     if state == Enum.TeleportState.Started and autoReconnect then
@@ -756,12 +788,8 @@ end)
 task.spawn(function()
     while not HUB.dead do
         if autoReconnect then
-            local ok, err = pcall(function()
-                if not game:IsLoaded() then
-                    task.wait(1)
-                    return
-                end
-                if #Players:GetPlayers() <= 1 and reconnectAttempts < 5 and reconnectTarget then
+            pcall(function()
+                if game:IsLoaded() and #Players:GetPlayers() <= 1 and reconnectAttempts < maxReconnectAttempts and reconnectTarget then
                     reconnectAttempts = reconnectAttempts + 1
                     Notify("Reconnect", "Attempt " .. reconnectAttempts, "Info", 2)
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, reconnectTarget, LocalPlayer)
