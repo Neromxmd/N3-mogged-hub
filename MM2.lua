@@ -633,14 +633,17 @@ VisualSub:AddSlider({ Name = "Field of View", Min = 30, Max = 120, Default = mat
 -- ════════════════════════════════════════════════════════════════════════════
 local GameplaySub = MM2Tab:AddSubTab("Gameplay")
 
--- ── AUTO FARM COINS (Teleport, no rotation, coin container) ──
+-- ── AUTO FARM COINS (BodyVelocity, no rotation) ──
 GameplaySub:AddSection("Auto Farm Coins")
 
 local autoFarmEnabled = false
-local coinLimit = 40
-local coinsCollected = 0
-local lobbyCFrame = nil
-local isFarming = false
+local coinLimit       = 40
+local coinsCollected  = 0
+local lobbyCFrame     = nil
+local isFarming       = false
+local farmFlySpeed    = 30
+local farmFlyHeight   = 5
+local currentBV       = nil
 
 GameplaySub:AddToggle({
     Name = "Auto Farm",
@@ -653,9 +656,12 @@ GameplaySub:AddToggle({
             if hrp then lobbyCFrame = hrp.CFrame end
             coinsCollected = 0
             isFarming = true
-            Notify("Gameplay", "Auto Farm ON — Lobby saved", "Success")
+            Notify("Gameplay", "Auto Farm ON", "Success")
         else
             isFarming = false
+            if currentBV then pcall(function() currentBV:Destroy() end); currentBV = nil end
+            local h = GetHumanoid()
+            if h then h.AutoRotate = true; h.PlatformStand = false end
             Notify("Gameplay", "Auto Farm OFF", "Info")
         end
     end,
@@ -668,17 +674,25 @@ GameplaySub:AddSlider({
     Callback = function(v) coinLimit = v end,
 })
 
-GameplaySub:AddParagraph({
-    Title = "Status",
-    Text = "Idle — Lobby not saved",
+GameplaySub:AddSlider({
+    Name = "Fly Speed",
+    Min = 15, Max = 60, Default = 30, Suffix = " studs/s",
+    Flag = "auto_farm_speed",
+    Callback = function(v) farmFlySpeed = v end,
 })
 
-local statusLabel = GameplaySub:AddParagraph({
+GameplaySub:AddSlider({
+    Name = "Fly Height",
+    Min = 2, Max = 15, Default = 5, Suffix = " studs",
+    Flag = "auto_farm_height",
+    Callback = function(v) farmFlyHeight = v end,
+})
+
+local farmStatusLabel = GameplaySub:AddParagraph({
     Title = "Status",
     Text = "Idle",
 })
 
--- Поиск контейнера монет
 local function getCoinContainer()
     for _, obj in ipairs(Workspace:GetChildren()) do
         if obj:FindFirstChild("CoinContainer") then
@@ -688,7 +702,6 @@ local function getCoinContainer()
     return nil
 end
 
--- Ближайшая монета
 local function findNearestCoin(hrp, container)
     if not hrp or not container then return nil end
     local myPos = hrp.Position
@@ -708,51 +721,100 @@ local function findNearestCoin(hrp, container)
     return best
 end
 
+-- Плавный полёт через BodyVelocity, без вращения
+local function moveTowards(hrp, targetPos, speed)
+    if not currentBV or currentBV.Parent ~= hrp then
+        if currentBV then pcall(function() currentBV:Destroy() end) end
+        currentBV = Instance.new("BodyVelocity")
+        currentBV.MaxForce = Vector3.new(1e5, 0, 1e5)  -- только X/Z, без вертикали
+        currentBV.P = 1250
+        currentBV.Parent = hrp
+    end
+    local dir = targetPos - hrp.Position
+    if dir.Magnitude < 1 then
+        currentBV.Velocity = Vector3.zero
+    else
+        currentBV.Velocity = Vector3.new(dir.X, 0, dir.Z).Unit * speed
+    end
+end
+
+local function stopMovement()
+    if currentBV then
+        currentBV.Velocity = Vector3.zero
+    end
+end
+
 task.spawn(function()
     while not HUB.dead do
         if autoFarmEnabled and isFarming then
             local hrp = GetHRP()
             local hum = GetHumanoid()
             if hrp and hum and hum.Health > 0 then
-                -- Лимит — возврат в лобби
+
+                -- Убираем вращение, оставляем физику
+                hum.AutoRotate = false
+                hum.PlatformStand = false
+
+                -- Лимит — возврат в лобби полётом
                 if coinsCollected >= coinLimit and lobbyCFrame then
-                    hrp.CFrame = lobbyCFrame
                     coinsCollected = 0
-                    statusLabel:Set(string.format("Returned to lobby. Coins reset to 0/%d", coinLimit))
+                    farmStatusLabel:Set("Returning to lobby...")
+
+                    local target = lobbyCFrame.Position
+                    local startTime = tick()
+                    while autoFarmEnabled and tick() - startTime < 15 do
+                        local h2 = GetHRP()
+                        if not h2 then break end
+                        local d = (target - h2.Position).Magnitude
+                        if d < 3 then break end
+                        moveTowards(h2, target, farmFlySpeed)
+                        task.wait(0.05)
+                    end
+                    stopMovement()
                     task.wait(1)
                 end
 
+                -- Сбор монет
                 local container = getCoinContainer()
                 if container then
                     local coin = findNearestCoin(hrp, container)
                     if coin then
-                        -- Телепорт без поворота
-                        hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+                        local target = coin.Position + Vector3.new(0, farmFlyHeight, 0)
+                        local dist = (coin.Position - hrp.Position).Magnitude
 
-                        -- Сбор
-                        if firetouchinterest then
-                            pcall(function()
-                                firetouchinterest(hrp, coin, 0)
-                                firetouchinterest(hrp, coin, 1)
-                            end)
+                        if dist > 4 then
+                            moveTowards(hrp, target, farmFlySpeed)
+                        else
+                            stopMovement()
+                            if firetouchinterest then
+                                pcall(function()
+                                    firetouchinterest(hrp, coin, 0)
+                                    firetouchinterest(hrp, coin, 1)
+                                end)
+                            end
+                            coinsCollected = coinsCollected + 1
                         end
-                        coinsCollected = coinsCollected + 1
-                        statusLabel:Set(string.format("Farming... %d/%d", coinsCollected, coinLimit))
-                        task.wait(0.1)
+
+                        farmStatusLabel:Set(string.format("Farming... %d/%d", coinsCollected, coinLimit))
+                        task.wait(0.05)
                     else
-                        statusLabel:Set(string.format("No coins in range. %d/%d", coinsCollected, coinLimit))
+                        stopMovement()
+                        farmStatusLabel:Set(string.format("No coins. %d/%d", coinsCollected, coinLimit))
                         task.wait(0.5)
                     end
                 else
-                    statusLabel:Set("Waiting for round / no CoinContainer")
+                    stopMovement()
+                    farmStatusLabel:Set("Waiting for round / no CoinContainer")
                     task.wait(0.5)
                 end
             else
-                statusLabel:Set("Waiting for character...")
+                stopMovement()
+                farmStatusLabel:Set("Waiting for character...")
                 task.wait(1)
             end
         else
-            statusLabel:Set("Idle")
+            stopMovement()
+            farmStatusLabel:Set("Idle")
             task.wait(0.5)
         end
     end
